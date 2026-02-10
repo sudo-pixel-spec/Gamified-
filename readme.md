@@ -32,12 +32,12 @@ Frontend
 ------------------------------------------------------------
 
 PROJECT STRUCTURE
-
+```
 gamified-learning/
 ├── backend/    # Express + MongoDB
 ├── frontend/   # Next.js
 └── README.md
-
+```
 ------------------------------------------------------------
 
 BACKEND RESPONSIBILITIES
