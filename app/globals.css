@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Matches the Figma "Stellar" Background */
+body {
+  background-color: #FFFFFF;
+  background-image: 
+    radial-gradient(circle at 0% 0%, #FFF3E0 0%, transparent 50%),
+    radial-gradient(circle at 100% 100%, #FFF3E0 0%, transparent 50%);
+  background-attachment: fixed; /* Keeps the glow in place when scrolling */
+  min-height: 100vh;
+  color: #1A1C1E;
+}
