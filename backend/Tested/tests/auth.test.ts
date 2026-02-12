@@ -1,17 +1,19 @@
 import request from "supertest";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import bcrypt from "bcryptjs";
 
 import { createApp } from "../src/app";
 import { Otp } from "../src/models/Otp";
 
-let mongod: MongoMemoryServer;
+let replset: MongoMemoryReplSet;
 
 describe("Auth OTP flow", () => {
   beforeAll(async () => {
-    mongod = await MongoMemoryServer.create();
-    await mongoose.connect(mongod.getUri());
+    replset = await MongoMemoryReplSet.create({
+      replSet: { count: 1 }
+    });
+    await mongoose.connect(replset.getUri());
   });
 
   afterEach(async () => {
@@ -20,7 +22,7 @@ describe("Auth OTP flow", () => {
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await mongod.stop();
+    await replset.stop();
   });
 
   it("request-otp should create OTP record", async () => {
