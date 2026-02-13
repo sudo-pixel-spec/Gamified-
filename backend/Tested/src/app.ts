@@ -9,6 +9,7 @@ import { authRouter } from "./routes/auth.routes";
 import { userRouter } from "./routes/user.routes";
 import { curriculumRouter } from "./routes/curriculum.routes";
 import { attemptRouter } from "./routes/attempt.routes";
+import { leaderboardRouter } from "./routes/leaderboard.routes";
 
 import { notFound } from "./middleware/notFound";
 import { errorHandler } from "./middleware/error";
@@ -27,6 +28,7 @@ export function createApp() {
   app.use("/v1", userRouter);
   app.use("/v1", curriculumRouter);
   app.use("/v1", attemptRouter);
+  app.use("/v1", leaderboardRouter);
 
   
   app.use(notFound);
