@@ -14,6 +14,10 @@ import {
   calculateDiamonds,
   updateStreak
 } from "../services/gamification.service";
+import { UserWeeklyStats } from "../models/UserWeeklyStats";
+import { getWeekStartISO, getDayISO } from "../services/leaderboard.service";
+import { weekWindow } from "../services/weekWindow";
+
 
 const SubmitSchema = z.object({
   lessonId: z.string(),
@@ -78,6 +82,48 @@ export async function submitAttempt(req: AuthRequest, res: Response) {
     user.wallet.diamonds += diamonds;
 
     await user.save({ session });
+
+    const weekStart = getWeekStartISO(new Date());
+    const todayISO = getDayISO(new Date());
+    const { start, end } = weekWindow(weekStart);
+
+    const alreadyCounted = await Attempt.findOne({
+      userId: user._id,
+      lessonId: lessonId,
+      createdAt: { $gte: start, $lt: end }
+    }).session(session);
+
+    const eligible = (timeSpentSec ?? 0) >= 20;
+
+    const stats = await UserWeeklyStats.findOneAndUpdate(
+      { userId: user._id, weekStart },
+      { $setOnInsert: { userId: user._id, weekStart } },
+      { upsert: true, new: true, session }
+    );
+
+    if (stats.lastActiveDay !== todayISO) {
+      stats.activeDays += 1;
+      stats.lastActiveDay = todayISO;
+    }
+
+    stats.questionsAttempted += quiz.questions.length;
+    stats.questionsCorrect += score;
+
+    if (!alreadyCounted && eligible) {
+      stats.lessonsCompleted += 1;
+
+      const DAILY_CAP = 300;
+      const xpToAdd = Math.min(xp, DAILY_CAP);
+
+      stats.eligibleXP += xpToAdd;
+
+      if (quiz.difficulty === "hard" && score === quiz.questions.length) {
+        stats.hardPerfectCount += 1;
+      }
+    }
+
+    await stats.save({ session });
+
 
     await Attempt.create(
       [
