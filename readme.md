@@ -1,6 +1,6 @@
 # Gamified Learning Platform
 
-Backend-first implementation for a gamified learning website (CBSE Std 8 focus).
+Implementation for a gamified learning website (CBSE Std 8 focus).
 
 This project is in active development.
 
