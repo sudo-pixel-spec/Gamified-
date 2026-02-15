@@ -45,15 +45,7 @@ gamified-learning/
 
 BACKEND RESPONSIBILITIES
 
-- Email OTP authentication
-- Profile completion gating
-- CBSE Std 8 curriculum APIs
-- Lessons, quizzes, and attempts
-- XP, levels, streaks, rewards logic
-- Weekly growth-based leaderboard logic
-- AI chatbot
-- AI quiz and explanation generation (with safe fallback)
-- Admin analytics APIs (separate access)
+- [View Backend Responsibilities](backend/Plan.md)
 
 ------------------------------------------------------------
 
