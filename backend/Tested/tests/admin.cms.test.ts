@@ -5,6 +5,12 @@ import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { createApp } from "../src/app";
 import { User } from "../src/models/User";
 import { Standard } from "../src/models/Standard";
+import { Quiz } from "../src/models/Quiz";
+import { Subject } from "../src/models/Subject";
+import { Unit } from "../src/models/Unit";
+import { Chapter } from "../src/models/Chapter";
+import { Lesson } from "../src/models/Lesson";
+import { Attempt } from "../src/models/Attempt";
 
 import { loginAndGetAccessToken, completeProfile } from "./helpers/auth";
 import { seedLessonWithQuiz } from "./helpers/seedLessonQuiz";
@@ -116,4 +122,181 @@ describe("Admin CMS", () => {
     expect(latest.status).toBe(200);
     expect(latest.body.data.version).toBe(2);
   });
+
+  it("publish safeguard: only one published quiz per lesson", async () => {
+  const app = createApp();
+  const adminToken = await makeAdmin(app, "adminpub@x.com");
+
+  const seeded = await seedLessonWithQuiz("medium");
+  const lessonId = seeded.lesson._id.toString();
+
+  const v2 = await request(app)
+    .post("/v1/admin/quizzes/version")
+    .set("Authorization", `Bearer ${adminToken}`)
+    .send({
+      lessonId,
+      difficulty: "hard",
+      source: "seed",
+      published: false,
+      questions: [{ qid: "n1", prompt: "New Q1", options: ["a", "b"], answerIndex: 1 }]
+    });
+
+  expect(v2.status).toBe(201);
+
+  const v1Doc = await Quiz.findOne({ lessonId, version: 1 }).lean();
+  const v2Id = v2.body.data._id;
+
+  expect(v1Doc).toBeTruthy();
+  expect(v1Doc!.published).toBe(true);
+
+  const pub = await request(app)
+    .patch(`/v1/admin/quizzes/${v2Id}/publish`)
+    .set("Authorization", `Bearer ${adminToken}`)
+    .send({});
+
+  expect(pub.status).toBe(200);
+  expect(pub.body.data.published).toBe(true);
+
+  const afterV1 = await Quiz.findOne({ lessonId, version: 1 }).lean();
+  const afterV2 = await Quiz.findOne({ lessonId, version: 2 }).lean();
+
+  expect(afterV1!.published).toBe(false);
+  expect(afterV2!.published).toBe(true);
+
+  const publishedCount = await Quiz.countDocuments({ lessonId, published: true });
+  expect(publishedCount).toBe(1);
+});
+
+it("delete safeguard: cannot delete standard if subjects exist", async () => {
+  const app = createApp();
+  const adminToken = await makeAdmin(app, "guard1@x.com");
+
+  const std = await request(app)
+    .post("/v1/admin/standards")
+    .set("Authorization", `Bearer ${adminToken}`)
+    .send({ code: "CBSE_STD_8", name: "Std 8", active: true });
+
+  const standardId = std.body.data._id;
+
+  await Subject.create({ standardId, name: "Science", orderIndex: 1 });
+
+  const del = await request(app)
+    .delete(`/v1/admin/standards/${standardId}`)
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(del.status).toBe(409);
+  expect(del.body.ok).toBe(false);
+  expect(del.body.error.code).toBe("HAS_CHILDREN");
+});
+
+it("delete safeguard: cannot delete subject if units exist", async () => {
+  const app = createApp();
+  const adminToken = await makeAdmin(app, "guard2@x.com");
+
+  const std = await request(app)
+    .post("/v1/admin/standards")
+    .set("Authorization", `Bearer ${adminToken}`)
+    .send({ code: "CBSE_STD_8", name: "Std 8", active: true });
+
+  const subject = await Subject.create({ standardId: std.body.data._id, name: "Science", orderIndex: 1 });
+  await Unit.create({ subjectId: subject._id, name: "Unit 1", orderIndex: 1 });
+
+  const del = await request(app)
+    .delete(`/v1/admin/subjects/${subject._id}`)
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(del.status).toBe(409);
+  expect(del.body.error.code).toBe("HAS_CHILDREN");
+});
+
+it("delete safeguard: cannot delete unit if chapters exist", async () => {
+  const app = createApp();
+  const adminToken = await makeAdmin(app, "guard3@x.com");
+
+  const std = await request(app)
+    .post("/v1/admin/standards")
+    .set("Authorization", `Bearer ${adminToken}`)
+    .send({ code: "CBSE_STD_8", name: "Std 8", active: true });
+
+  const subject = await Subject.create({ standardId: std.body.data._id, name: "Science", orderIndex: 1 });
+  const unit = await Unit.create({ subjectId: subject._id, name: "Unit 1", orderIndex: 1 });
+  await Chapter.create({ unitId: unit._id, name: "Ch 1", orderIndex: 1 });
+
+  const del = await request(app)
+    .delete(`/v1/admin/units/${unit._id}`)
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(del.status).toBe(409);
+  expect(del.body.error.code).toBe("HAS_CHILDREN");
+});
+
+it("delete safeguard: cannot delete chapter if lessons exist", async () => {
+  const app = createApp();
+  const adminToken = await makeAdmin(app, "guard4@x.com");
+
+  const std = await request(app)
+    .post("/v1/admin/standards")
+    .set("Authorization", `Bearer ${adminToken}`)
+    .send({ code: "CBSE_STD_8", name: "Std 8", active: true });
+
+  const subject = await Subject.create({ standardId: std.body.data._id, name: "Science", orderIndex: 1 });
+  const unit = await Unit.create({ subjectId: subject._id, name: "Unit 1", orderIndex: 1 });
+  const chapter = await Chapter.create({ unitId: unit._id, name: "Ch 1", orderIndex: 1 });
+
+  await Lesson.create({ chapterId: chapter._id, title: "L1", orderIndex: 1, published: true });
+
+  const del = await request(app)
+    .delete(`/v1/admin/chapters/${chapter._id}`)
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(del.status).toBe(409);
+  expect(del.body.error.code).toBe("HAS_CHILDREN");
+});
+
+it("delete safeguard: cannot delete lesson if quizzes exist", async () => {
+  const app = createApp();
+  const adminToken = await makeAdmin(app, "guard5@x.com");
+
+  const seeded = await seedLessonWithQuiz("medium");
+  const lessonId = seeded.lesson._id.toString();
+
+  const del = await request(app)
+    .delete(`/v1/admin/lessons/${lessonId}`)
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(del.status).toBe(409);
+  expect(del.body.error.code).toBe("HAS_CHILDREN");
+});
+
+it("delete safeguard: cannot delete lesson if attempts exist", async () => {
+  const app = createApp();
+  const adminToken = await makeAdmin(app, "guard6@x.com");
+
+  const seeded = await seedLessonWithQuiz("medium");
+  const lessonId = seeded.lesson._id.toString();
+
+  const token = await loginAndGetAccessToken(app, "attempt@x.com");
+  await completeProfile(app, token);
+
+  await request(app)
+    .post("/v1/attempts/submit")
+    .set("Authorization", `Bearer ${token}`)
+    .send({
+      lessonId,
+      answers: [
+        { qid: "q1", selectedIndex: 0 },
+        { qid: "q2", selectedIndex: 1 },
+        { qid: "q3", selectedIndex: 2 }
+      ],
+      timeSpentSec: 30,
+      idempotencyKey: "guard-attempt-1"
+    });
+
+  const del = await request(app)
+    .delete(`/v1/admin/lessons/${lessonId}`)
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(del.status).toBe(409);
+  expect(del.body.error.code).toBe("HAS_CHILDREN");
+});
 });

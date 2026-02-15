@@ -8,7 +8,7 @@ import {
   listUnits, createUnit, updateUnit, deleteUnit,
   listChapters, createChapter, updateChapter, deleteChapter,
   listLessons, createLesson, updateLesson, deleteLesson,
-  getLatestQuizForLesson, createQuizVersion, setQuizPublished
+  getLatestQuizForLesson, createQuizVersion, setQuizPublished, publishQuizExclusive
 } from "../controllers/admin.controller";
 
 export const adminRouter = Router();
@@ -43,3 +43,4 @@ adminRouter.delete("/lessons/:id", deleteLesson);
 adminRouter.get("/quizzes/latest", getLatestQuizForLesson);
 adminRouter.post("/quizzes/version", createQuizVersion);
 adminRouter.patch("/quizzes/:id/published", setQuizPublished);
+adminRouter.patch("/quizzes/:id/publish", publishQuizExclusive);
