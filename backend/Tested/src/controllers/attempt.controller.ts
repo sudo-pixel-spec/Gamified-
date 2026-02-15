@@ -46,7 +46,7 @@ export async function submitAttempt(req: AuthRequest, res: Response) {
     return res.json(ok(existing));
   }
 
-  const quiz = await Quiz.findOne({ lessonId }).sort({ version: -1 });
+  const quiz = await Quiz.findOne({ lessonId, published: true }).sort({ version: -1 });
   if (!quiz) return res.status(404).json(fail("QUIZ_NOT_FOUND", "No quiz for lesson"));
 
   let score = 0;

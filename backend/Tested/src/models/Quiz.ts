@@ -10,15 +10,16 @@ const QuestionSchema = new mongoose.Schema({
 
 const QuizSchema = new mongoose.Schema(
   {
-    lessonId: { type: mongoose.Schema.Types.ObjectId, ref: "Lesson", required: true, index: true },
+    lessonId: {type: mongoose.Schema.Types.ObjectId, ref: "Lesson", required: true, index: true},
     version: { type: Number, required: true },
-    source: { type: String, enum: ["seed", "ai"], default: "seed" },
-    difficulty: { type: String, enum: ["easy", "medium", "hard"], default: "medium" },
-    questions: [QuestionSchema]
-  },
-  { timestamps: true }
+    source: {type: String, enum: ["seed", "ai"], default: "seed"},
+    difficulty: {type: String, enum: ["easy", "medium", "hard"], default: "medium"},
+    published: {type: Boolean, default: false, index: true}, questions: [QuestionSchema]},
+    { timestamps: true }
 );
 
 QuizSchema.index({ lessonId: 1, version: -1 });
+
+QuizSchema.index({ lessonId: 1, published: 1, version: -1 });
 
 export const Quiz = mongoose.model("Quiz", QuizSchema);

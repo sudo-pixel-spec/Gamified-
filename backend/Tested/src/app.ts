@@ -11,6 +11,8 @@ import { curriculumRouter } from "./routes/curriculum.routes";
 import { attemptRouter } from "./routes/attempt.routes";
 import { leaderboardRouter } from "./routes/leaderboard.routes";
 import { chatRouter } from "./routes/chat.routes";
+import { adminRouter } from "./routes/admin.routes";
+
 
 import { notFound } from "./middleware/notFound";
 import { errorHandler } from "./middleware/error";
@@ -31,6 +33,7 @@ export function createApp() {
   app.use("/v1", attemptRouter);
   app.use("/v1", leaderboardRouter);
   app.use("/v1", chatRouter);
+  app.use("/v1/admin", adminRouter);
 
   
   app.use(notFound);

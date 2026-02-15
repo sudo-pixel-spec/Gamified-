@@ -26,6 +26,7 @@ export async function seedLessonWithQuiz(difficulty: "easy" | "medium" | "hard" 
     version: 1,
     source: "seed",
     difficulty,
+    published: true,
     questions: [
       { qid: "q1", prompt: "Q1", options: ["a", "b", "c", "d"], answerIndex: 0, explanation: "E1" },
       { qid: "q2", prompt: "Q2", options: ["a", "b", "c", "d"], answerIndex: 1, explanation: "E2" },

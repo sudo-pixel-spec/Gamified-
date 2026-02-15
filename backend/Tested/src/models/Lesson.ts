@@ -7,7 +7,10 @@ const LessonSchema = new mongoose.Schema({
 
   videoUrl: { type: String },
   bullets: [{ type: String }],
-  contentText: { type: String }
+  contentText: { type: String },
+
+  published: { type: Boolean, default: false },
+  tags: [{ type: String }],
 });
 
 export const Lesson = mongoose.model("Lesson", LessonSchema);
