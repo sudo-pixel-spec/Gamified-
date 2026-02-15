@@ -25,9 +25,6 @@ Backend
 - Node.js
 - Express
 - MongoDB
-- JWT authentication
-- Email OTP (passwordless)
-- AI integration (chatbot, quiz generation)
 
 Frontend
 - Next.js
