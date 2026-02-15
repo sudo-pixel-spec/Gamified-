@@ -7,6 +7,9 @@ This project is in active development.
 ------------------------------------------------------------
 
 STATUS
+<p align="center">
+  <img src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&size=28&pause=1000&center=true&vCenter=true&width=900&lines=Production+is+stable.;Backend+Dev+unstable+(on+vacation)+%F0%9F%8F%96%EF%B8%8F" />
+</p>
 
 - Work in Progress
 - Backend: in progress
