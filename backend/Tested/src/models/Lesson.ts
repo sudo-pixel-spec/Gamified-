@@ -11,6 +11,9 @@ const LessonSchema = new mongoose.Schema({
 
   published: { type: Boolean, default: false },
   tags: [{ type: String }],
+
+  deletedAt: { type: Date, default: null, index: true },
+  deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 });
 
 export const Lesson = mongoose.model("Lesson", LessonSchema);
