@@ -34,9 +34,14 @@ const StandardUpdate = z.object({
 
 export async function listStandards(req: Request, res: Response) {
   const { limit, skip, page } = parsePaging(req);
+
+  const filter: any = {};
+  const includeDeleted = String(req.query.includeDeleted ?? "false") === "true";
+  if (!includeDeleted) filter.deletedAt = null;
+
   const [items, total] = await Promise.all([
-    Standard.find().sort({ name: 1 }).skip(skip).limit(limit).lean(),
-    Standard.countDocuments(),
+    Standard.find(filter).sort({ name: 1 }).skip(skip).limit(limit).lean(),
+    Standard.countDocuments(filter),
   ]);
   return res.json(ok({ page, limit, total, items }));
 }
@@ -73,15 +78,32 @@ export async function deleteStandard(req: Request, res: Response) {
   const p = IdParam.safeParse(req.params);
   if (!p.success) return res.status(400).json(fail("VALIDATION", "Invalid id"));
 
-  const subjectCount = await Subject.countDocuments({ standardId: p.data.id });
+  const subjectCount = await Subject.countDocuments({
+    standardId: p.data.id,
+    deletedAt: null,
+  });
   if (subjectCount > 0) {
     return res
       .status(409)
-      .json(fail("HAS_CHILDREN", "Cannot delete standard with existing subjects", { subjectCount }));
+      .json(
+        fail(
+          "HAS_CHILDREN",
+          "Cannot delete standard with existing subjects",
+          { subjectCount }
+        )
+      );
   }
 
-  const deleted = await Standard.findByIdAndDelete(p.data.id).lean();
-  if (!deleted) return res.status(404).json(fail("NOT_FOUND", "Standard not found"));
+  const adminId = (req as any).user?.id ?? null;
+
+  const updated = await Standard.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: new Date(), deletedBy: adminId },
+    { new: true }
+  ).lean();
+
+  if (!updated)
+    return res.status(404).json(fail("NOT_FOUND", "Standard not found"));
   return res.json(ok({ deleted: true }));
 }
 
@@ -100,6 +122,9 @@ export async function listSubjects(req: Request, res: Response) {
   const { limit, skip, page } = parsePaging(req);
   const filter: any = {};
   if (req.query.standardId) filter.standardId = req.query.standardId;
+
+  const includeDeleted = String(req.query.includeDeleted ?? "false") === "true";
+  if (!includeDeleted) filter.deletedAt = null;
 
   const [items, total] = await Promise.all([
     Subject.find(filter).sort({ orderIndex: 1 }).skip(skip).limit(limit).lean(),
@@ -141,15 +166,32 @@ export async function deleteSubject(req: Request, res: Response) {
   const p = IdParam.safeParse(req.params);
   if (!p.success) return res.status(400).json(fail("VALIDATION", "Invalid id"));
 
-  const unitCount = await Unit.countDocuments({ subjectId: p.data.id });
+  const unitCount = await Unit.countDocuments({
+    subjectId: p.data.id,
+    deletedAt: null,
+  });
   if (unitCount > 0) {
     return res
       .status(409)
-      .json(fail("HAS_CHILDREN", "Cannot delete subject with existing units", { unitCount }));
+      .json(
+        fail(
+          "HAS_CHILDREN",
+          "Cannot delete subject with existing units",
+          { unitCount }
+        )
+      );
   }
 
-  const deleted = await Subject.findByIdAndDelete(p.data.id).lean();
-  if (!deleted) return res.status(404).json(fail("NOT_FOUND", "Subject not found"));
+  const adminId = (req as any).user?.id ?? null;
+
+  const updated = await Subject.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: new Date(), deletedBy: adminId },
+    { new: true }
+  ).lean();
+
+  if (!updated)
+    return res.status(404).json(fail("NOT_FOUND", "Subject not found"));
   return res.json(ok({ deleted: true }));
 }
 
@@ -168,6 +210,9 @@ export async function listUnits(req: Request, res: Response) {
   const { limit, skip, page } = parsePaging(req);
   const filter: any = {};
   if (req.query.subjectId) filter.subjectId = req.query.subjectId;
+
+  const includeDeleted = String(req.query.includeDeleted ?? "false") === "true";
+  if (!includeDeleted) filter.deletedAt = null;
 
   const [items, total] = await Promise.all([
     Unit.find(filter).sort({ orderIndex: 1 }).skip(skip).limit(limit).lean(),
@@ -209,15 +254,32 @@ export async function deleteUnit(req: Request, res: Response) {
   const p = IdParam.safeParse(req.params);
   if (!p.success) return res.status(400).json(fail("VALIDATION", "Invalid id"));
 
-  const chapterCount = await Chapter.countDocuments({ unitId: p.data.id });
+  const chapterCount = await Chapter.countDocuments({
+    unitId: p.data.id,
+    deletedAt: null,
+  });
   if (chapterCount > 0) {
     return res
       .status(409)
-      .json(fail("HAS_CHILDREN", "Cannot delete unit with existing chapters", { chapterCount }));
+      .json(
+        fail(
+          "HAS_CHILDREN",
+          "Cannot delete unit with existing chapters",
+          { chapterCount }
+        )
+      );
   }
 
-  const deleted = await Unit.findByIdAndDelete(p.data.id).lean();
-  if (!deleted) return res.status(404).json(fail("NOT_FOUND", "Unit not found"));
+  const adminId = (req as any).user?.id ?? null;
+
+  const updated = await Unit.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: new Date(), deletedBy: adminId },
+    { new: true }
+  ).lean();
+
+  if (!updated)
+    return res.status(404).json(fail("NOT_FOUND", "Unit not found"));
   return res.json(ok({ deleted: true }));
 }
 
@@ -236,6 +298,9 @@ export async function listChapters(req: Request, res: Response) {
   const { limit, skip, page } = parsePaging(req);
   const filter: any = {};
   if (req.query.unitId) filter.unitId = req.query.unitId;
+
+  const includeDeleted = String(req.query.includeDeleted ?? "false") === "true";
+  if (!includeDeleted) filter.deletedAt = null;
 
   const [items, total] = await Promise.all([
     Chapter.find(filter).sort({ orderIndex: 1 }).skip(skip).limit(limit).lean(),
@@ -277,15 +342,32 @@ export async function deleteChapter(req: Request, res: Response) {
   const p = IdParam.safeParse(req.params);
   if (!p.success) return res.status(400).json(fail("VALIDATION", "Invalid id"));
 
-  const lessonCount = await Lesson.countDocuments({ chapterId: p.data.id });
+  const lessonCount = await Lesson.countDocuments({
+    chapterId: p.data.id,
+    deletedAt: null,
+  });
   if (lessonCount > 0) {
     return res
       .status(409)
-      .json(fail("HAS_CHILDREN", "Cannot delete chapter with existing lessons", { lessonCount }));
+      .json(
+        fail(
+          "HAS_CHILDREN",
+          "Cannot delete chapter with existing lessons",
+          { lessonCount }
+        )
+      );
   }
 
-  const deleted = await Chapter.findByIdAndDelete(p.data.id).lean();
-  if (!deleted) return res.status(404).json(fail("NOT_FOUND", "Chapter not found"));
+  const adminId = (req as any).user?.id ?? null;
+
+  const updated = await Chapter.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: new Date(), deletedBy: adminId },
+    { new: true }
+  ).lean();
+
+  if (!updated)
+    return res.status(404).json(fail("NOT_FOUND", "Chapter not found"));
   return res.json(ok({ deleted: true }));
 }
 
@@ -311,6 +393,9 @@ export async function listLessons(req: Request, res: Response) {
   if (req.query.chapterId) filter.chapterId = req.query.chapterId;
   if (typeof req.query.published === "string")
     filter.published = req.query.published === "true";
+
+  const includeDeleted = String(req.query.includeDeleted ?? "false") === "true";
+  if (!includeDeleted) filter.deletedAt = null;
 
   const [items, total] = await Promise.all([
     Lesson.find(filter).sort({ orderIndex: 1 }).skip(skip).limit(limit).lean(),
@@ -355,20 +440,27 @@ export async function deleteLesson(req: Request, res: Response) {
 
   const [attemptCount, quizCount] = await Promise.all([
     Attempt.countDocuments({ lessonId: p.data.id }),
-    Quiz.countDocuments({ lessonId: p.data.id })
+    Quiz.countDocuments({ lessonId: p.data.id, deletedAt: null }),
   ]);
 
   if (attemptCount > 0 || quizCount > 0) {
     return res.status(409).json(
       fail("HAS_CHILDREN", "Cannot delete lesson with existing attempts/quizzes", {
         attemptCount,
-        quizCount
+        quizCount,
       })
     );
   }
 
-  const deleted = await Lesson.findByIdAndDelete(p.data.id).lean();
-  if (!deleted) return res.status(404).json(fail("NOT_FOUND", "Lesson not found"));
+  const adminId = (req as any).user?.id ?? null;
+
+  const updated = await Lesson.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: new Date(), deletedBy: adminId },
+    { new: true }
+  ).lean();
+
+  if (!updated) return res.status(404).json(fail("NOT_FOUND", "Lesson not found"));
   return res.json(ok({ deleted: true }));
 }
 
@@ -481,4 +573,88 @@ export async function publishQuizExclusive(req: Request, res: Response) {
   } finally {
     session.endSession();
   }
+}
+
+export async function restoreStandard(req: Request, res: Response) {
+  const p = IdParam.safeParse(req.params);
+  if (!p.success) return res.status(400).json(fail("VALIDATION", "Invalid id"));
+
+  const updated = await Standard.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: null, deletedBy: null },
+    { new: true }
+  ).lean();
+
+  if (!updated) return res.status(404).json(fail("NOT_FOUND", "Standard not found"));
+  return res.json(ok(updated));
+}
+
+export async function restoreSubject(req: Request, res: Response) {
+  const p = IdParam.safeParse(req.params);
+  if (!p.success) return res.status(400).json(fail("VALIDATION", "Invalid id"));
+
+  const updated = await Subject.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: null, deletedBy: null },
+    { new: true }
+  ).lean();
+
+  if (!updated) return res.status(404).json(fail("NOT_FOUND", "Subject not found"));
+  return res.json(ok(updated));
+}
+
+export async function restoreUnit(req: Request, res: Response) {
+  const p = IdParam.safeParse(req.params);
+  if (!p.success) return res.status(400).json(fail("VALIDATION", "Invalid id"));
+
+  const updated = await Unit.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: null, deletedBy: null },
+    { new: true }
+  ).lean();
+
+  if (!updated) return res.status(404).json(fail("NOT_FOUND", "Unit not found"));
+  return res.json(ok(updated));
+}
+
+export async function restoreChapter(req: Request, res: Response) {
+  const p = IdParam.safeParse(req.params);
+  if (!p.success) return res.status(400).json(fail("VALIDATION", "Invalid id"));
+
+  const updated = await Chapter.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: null, deletedBy: null },
+    { new: true }
+  ).lean();
+
+  if (!updated) return res.status(404).json(fail("NOT_FOUND", "Chapter not found"));
+  return res.json(ok(updated));
+}
+
+export async function restoreLesson(req: Request, res: Response) {
+  const p = IdParam.safeParse(req.params);
+  if (!p.success) return res.status(400).json(fail("VALIDATION", "Invalid id"));
+
+  const updated = await Lesson.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: null, deletedBy: null },
+    { new: true }
+  ).lean();
+
+  if (!updated) return res.status(404).json(fail("NOT_FOUND", "Lesson not found"));
+  return res.json(ok(updated));
+}
+
+export async function restoreQuiz(req: Request, res: Response) {
+  const p = IdParam.safeParse(req.params);
+  if (!p.success) return res.status(400).json(fail("VALIDATION", "Invalid id"));
+
+  const updated = await Quiz.findByIdAndUpdate(
+    p.data.id,
+    { deletedAt: null, deletedBy: null },
+    { new: true }
+  ).lean();
+
+  if (!updated) return res.status(404).json(fail("NOT_FOUND", "Quiz not found"));
+  return res.json(ok(updated));
 }
