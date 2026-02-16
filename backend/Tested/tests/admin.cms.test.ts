@@ -87,7 +87,8 @@ describe("Admin CMS", () => {
 
     expect(delRes.status).toBe(200);
 
-    expect(await Standard.countDocuments()).toBe(0);
+    expect(await Standard.countDocuments({ deletedAt: null })).toBe(0);
+    expect(await Standard.countDocuments({ deletedAt: { $ne: null } })).toBe(1);
   });
 
   it("admin can create next quiz version for a lesson", async () => {
@@ -298,5 +299,51 @@ it("delete safeguard: cannot delete lesson if attempts exist", async () => {
 
   expect(del.status).toBe(409);
   expect(del.body.error.code).toBe("HAS_CHILDREN");
+});
+
+it("soft delete: deleted items excluded from admin list by default, included with includeDeleted=true, and can be restored", async () => {
+  const app = createApp();
+  const adminToken = await makeAdmin(app, "soft@x.com");
+
+  const createRes = await request(app)
+    .post("/v1/admin/standards")
+    .set("Authorization", `Bearer ${adminToken}`)
+    .send({ code: "CBSE_STD_8", name: "Std 8", active: true });
+
+  const id = createRes.body.data._id;
+
+  const del = await request(app)
+    .delete(`/v1/admin/standards/${id}`)
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(del.status).toBe(200);
+
+  const listDefault = await request(app)
+    .get("/v1/admin/standards")
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(listDefault.status).toBe(200);
+  expect(listDefault.body.data.total).toBe(0);
+
+  const listIncl = await request(app)
+    .get("/v1/admin/standards?includeDeleted=true")
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(listIncl.status).toBe(200);
+  expect(listIncl.body.data.total).toBe(1);
+  expect(listIncl.body.data.items[0].deletedAt).toBeTruthy();
+
+  const restore = await request(app)
+    .patch(`/v1/admin/standards/${id}/restore`)
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(restore.status).toBe(200);
+  expect(restore.body.data.deletedAt).toBe(null);
+
+  const listAfter = await request(app)
+    .get("/v1/admin/standards")
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(listAfter.body.data.total).toBe(1);
 });
 });
