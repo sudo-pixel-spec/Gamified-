@@ -62,4 +62,22 @@ describe("AI Chat", () => {
     expect(res.status).toBe(200);
     expect(res.body.data.reply).toContain("won't provide direct quiz answers");
   });
+
+  it("should enforce daily AI quota", async () => {
+  process.env.AI_DAILY_LIMIT = "2";
+
+  const app = createApp();
+  const token = await loginAndGetAccessToken(app, "quota@x.com");
+  await completeProfile(app, token);
+
+  const r1 = await request(app).post("/v1/ai/chat").set("Authorization", `Bearer ${token}`).send({ message: "hi" });
+  const r2 = await request(app).post("/v1/ai/chat").set("Authorization", `Bearer ${token}`).send({ message: "hi2" });
+  const r3 = await request(app).post("/v1/ai/chat").set("Authorization", `Bearer ${token}`).send({ message: "hi3" });
+
+  expect(r1.status).toBe(200);
+  expect(r2.status).toBe(200);
+  expect(r3.status).toBe(429);
+  expect(r3.body.error.code).toBe("AI_DAILY_LIMIT");
+});
+
 });
