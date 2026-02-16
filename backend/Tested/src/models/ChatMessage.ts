@@ -10,4 +10,6 @@ const ChatMessageSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+ChatMessageSchema.index({ sessionId: 1, createdAt: 1 });
+
 export const ChatMessage = mongoose.model("ChatMessage", ChatMessageSchema);

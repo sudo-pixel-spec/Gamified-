@@ -21,5 +21,6 @@ const UserWeeklyStatsSchema = new mongoose.Schema(
 );
 
 UserWeeklyStatsSchema.index({ userId: 1, weekStart: 1 }, { unique: true });
+UserWeeklyStatsSchema.index({ weekStart: 1, eligibleXP: -1 });
 
 export const UserWeeklyStats = mongoose.model("UserWeeklyStats", UserWeeklyStatsSchema);

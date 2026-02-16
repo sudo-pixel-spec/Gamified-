@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { softDeletePlugin } from "../models/plugins/softDeletePlugin";
 
 const UnitSchema = new mongoose.Schema({
   subjectId: { type: mongoose.Schema.Types.ObjectId, ref: "Subject", required: true, index: true },
@@ -9,4 +10,5 @@ const UnitSchema = new mongoose.Schema({
   deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 });
 
+UnitSchema.plugin(softDeletePlugin);
 export const Unit = mongoose.model("Unit", UnitSchema);
