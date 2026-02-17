@@ -15,14 +15,18 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "agenda": "^6.2.3",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.2.1",
+    "nanoid": "^5.1.6",
+    "openai": "^6.21.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "zod": "^4.3.6"
