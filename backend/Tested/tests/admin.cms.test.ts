@@ -346,4 +346,19 @@ it("soft delete: deleted items excluded from admin list by default, included wit
 
   expect(listAfter.body.data.total).toBe(1);
 });
+
+it("admin jobs status returns enabled false when jobs disabled", async () => {
+  const app = createApp();
+  const adminToken = await makeAdmin(app, "jobs@x.com");
+
+  process.env.JOBS_ENABLED = "false";
+
+  const res = await request(app)
+    .get("/v1/admin/jobs/status")
+    .set("Authorization", `Bearer ${adminToken}`);
+
+  expect(res.status).toBe(200);
+  expect(res.body.ok).toBe(true);
+  expect(res.body.data.enabled).toBe(false);
+});
 });

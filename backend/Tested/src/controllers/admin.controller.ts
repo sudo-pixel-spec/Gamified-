@@ -12,6 +12,9 @@ import { Quiz } from "../models/Quiz";
 import { Attempt } from "../models/Attempt";
 import { writeAdminAudit } from "../services/adminAudit";
 
+import { getAgenda } from "../jobs/agenda";
+import { ok, fail } from "../utils/apiResponse";
+
 function parsePaging(req: Request) {
   const page = Math.max(1, Number(req.query.page ?? 1));
   const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 20)));
@@ -32,6 +35,19 @@ const StandardUpdate = z.object({
   name: z.string().min(2).optional(),
   active: z.boolean().optional(),
 });
+
+export async function jobsStatus(req: any, res: any) {
+  if (process.env.JOBS_ENABLED !== "true") {
+    return res.json(ok({ enabled: false }));
+  }
+
+  try {
+    const agenda = getAgenda();
+    return res.json(ok({ enabled: true, name: agenda.name }));
+  } catch {
+    return res.status(500).json(fail("JOBS_NOT_READY", "Jobs enabled but agenda not initialized"));
+  }
+}
 
 export async function listStandards(req: Request, res: Response) {
   const { limit, skip, page } = parsePaging(req);

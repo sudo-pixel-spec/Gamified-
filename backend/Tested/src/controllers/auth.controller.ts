@@ -1,17 +1,34 @@
 import { Request, Response } from "express";
+import { OAuth2Client } from "google-auth-library";
 import { z } from "zod";
 import { ok, fail } from "../utils/apiResponse";
 import { createOtp, verifyOtp as verifyOtpSvc } from "../services/otpService";
 import { DevConsoleEmailProvider } from "../services/emailProvider";
 import { User } from "../models/User";
 import { RefreshToken } from "../models/RefreshToken";
-import { signAccessToken, signRefreshToken, hashToken, verifyToken, compareToken } from "../services/authTokens";
+import {
+  signAccessToken,
+  signRefreshToken,
+  hashToken,
+  verifyToken,
+  compareToken
+} from "../services/authTokens";
 import { env } from "../config/env";
+import { enqueueNow } from "../jobs/enqueue";
+import { JOBS } from "../jobs/definitions";
+
+
 
 const emailProvider = new DevConsoleEmailProvider();
 
 const RequestOtpSchema = z.object({ email: z.string().email() });
 const VerifyOtpSchema = z.object({ email: z.string().email(), otp: z.string().min(6).max(6) });
+
+const GoogleSchema = z.object({
+  credential: z.string().min(20)
+});
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 function setRefreshCookie(res: Response, refreshToken: string) {
   res.cookie("refresh_token", refreshToken, {
@@ -30,7 +47,7 @@ export async function requestOtp(req: Request, res: Response) {
   const { email } = parsed.data;
   const otp = await createOtp(email, req.ip);
 
-  await emailProvider.sendOtp(email, otp);
+  await enqueueNow(JOBS.SEND_OTP_EMAIL, { email, otp });
   return res.json(ok({ message: "OTP sent" }));
 }
 
@@ -68,6 +85,77 @@ export async function verifyOtp(req: Request, res: Response) {
         email: user.email,
         role: user.role,
         profileComplete: user.profileComplete
+      }
+    })
+  );
+}
+
+export async function googleSignIn(req: Request, res: Response) {
+  const parsed = GoogleSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(fail("VALIDATION", "Invalid payload"));
+
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    return res.status(500).json(fail("CONFIG", "GOOGLE_CLIENT_ID missing"));
+  }
+
+  const { credential } = parsed.data;
+
+  let ticket;
+  try {
+    ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+  } catch {
+    return res.status(401).json(fail("GOOGLE_AUTH_FAILED", "Invalid Google credential"));
+  }
+
+  const payload = ticket.getPayload();
+  const email = payload?.email;
+  const emailVerified = payload?.email_verified;
+  const name = payload?.name ?? "";
+  const picture = payload?.picture ?? "";
+
+  if (!email || emailVerified !== true) {
+    return res.status(401).json(fail("GOOGLE_AUTH_FAILED", "Google account email not verified"));
+  }
+
+  let user = await User.findOne({ email });
+  if (!user) {
+    user = await User.create({
+      email,
+      role: "learner",
+      authProvider: "google",
+      profile: {
+        fullName: name,
+        avatarUrl: picture
+      },
+      profileComplete: false
+    } as any);
+  }
+
+  const accessToken = signAccessToken({ sub: String(user._id), role: user.role });
+  const refreshToken = signRefreshToken({ sub: String(user._id), role: user.role });
+
+  const tokenHash = await hashToken(refreshToken);
+  await RefreshToken.create({
+    userId: user._id,
+    tokenHash,
+    expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000),
+    createdIp: req.ip,
+    userAgent: req.get("user-agent")
+  });
+
+  setRefreshCookie(res, refreshToken);
+
+  return res.json(
+    ok({
+      accessToken,
+      user: {
+        id: String(user._id),
+        email: user.email,
+        role: user.role,
+        profileComplete: (user as any).profileComplete
       }
     })
   );
