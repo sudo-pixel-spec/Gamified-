@@ -1,9 +1,7 @@
 import { env } from "./config/env";
 import { connectDB, disconnectDB } from "./config/db";
 import { createApp } from "./app";
-
-import { getAgenda } from "./jobs/agenda";
-import { defineJobs, JOBS } from "./jobs/definitions";
+import { JOBS, defineJobs } from "./jobs/definitions";
 
 async function main() {
   await connectDB();
@@ -15,8 +13,15 @@ async function main() {
   });
 
   let agenda: any = null;
-  if (env.NODE_ENV !== "test" && env.JOBS_ENABLED) {
+
+  const jobsEnabled = env.NODE_ENV !== "test" && env.JOBS_ENABLED === true;
+  const useAgenda = env.JOBS_DRIVER === "agenda";
+
+  if (jobsEnabled && useAgenda) {
+    const { getAgenda } = require("./jobs/agenda");
+
     agenda = await getAgenda();
+
     defineJobs(agenda);
 
     await agenda.start();
