@@ -12,7 +12,7 @@ STATUS
 </p>
 
 - Work in Progress
-- Backend: in progress
+- Backend: v1 Production Ready
 - Frontend: 
 - AI features: planned
 - APIs and schemas: evolving, changes expected
