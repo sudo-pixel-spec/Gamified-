@@ -44,6 +44,7 @@ BACKEND RESPONSIBILITIES
 
 - [View Backend Responsibilities](backend/Plan.md)
 - [View Backend Production Ready Components](backend/Production/Production%20ready%20components%20list.md)
+- [View Backend Launch Readiness Audit](backend/Production/LAUNCH_READINESS_AUDIT.md)
 
 ------------------------------------------------------------
 
