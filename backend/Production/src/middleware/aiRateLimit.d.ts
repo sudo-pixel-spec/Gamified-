@@ -1,0 +1,1 @@
+export declare const aiRateLimit: import("express-rate-limit").RateLimitRequestHandler;

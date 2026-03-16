@@ -1,0 +1,27 @@
+export declare const env: {
+    NODE_ENV: "development" | "test" | "production";
+    PORT: number;
+    MONGODB_URI: string;
+    CORS_ORIGIN: string;
+    COOKIE_SECURE: boolean;
+    COOKIE_SAMESITE: "lax" | "none" | "strict";
+    JWT_SECRET: string;
+    ACCESS_TOKEN_TTL_MIN: number;
+    REFRESH_TOKEN_TTL_DAYS: number;
+    AI_DAILY_LIMIT: number;
+    JOBS_ENABLED: boolean;
+    JOBS_DRIVER: "inline" | "agenda";
+    JOBS_COLLECTION: string;
+    JOBS_CONCURRENCY: number;
+    JOBS_LOCK_LIFETIME_MS: number;
+    EMAIL_PROVIDER: "console" | "smtp" | "resend";
+    SMTP_SECURE: boolean;
+    GOOGLE_CLIENT_ID?: string | undefined;
+    SMTP_HOST?: string | undefined;
+    SMTP_PORT?: number | undefined;
+    SMTP_USER?: string | undefined;
+    SMTP_PASS?: string | undefined;
+    SMTP_FROM?: string | undefined;
+    RESEND_API_KEY?: string | undefined;
+    EMAIL_FROM?: string | undefined;
+};

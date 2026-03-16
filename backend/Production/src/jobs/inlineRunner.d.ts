@@ -1,0 +1,1 @@
+export declare function runJobInline(name: string, payload: any): Promise<void>;

@@ -1,9 +1,0 @@
-export interface EmailProvider {
-  sendOtp(email: string, otp: string): Promise<void>;
-}
-
-export class DevConsoleEmailProvider implements EmailProvider {
-  async sendOtp(email: string, otp: string) {
-    console.log(`[DEV OTP] email=${email} otp=${otp}`);
-  }
-}

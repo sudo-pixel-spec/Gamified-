@@ -1,0 +1,1 @@
+export declare function getAgenda(): Promise<any>;

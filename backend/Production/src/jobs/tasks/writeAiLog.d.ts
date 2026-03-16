@@ -1,0 +1,1 @@
+export declare function writeAiLog(payload: any): Promise<void>;
