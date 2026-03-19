@@ -17,7 +17,7 @@ The backend is a Node.js/Express application designed to manage a gamified educa
 ---
 
 ## 2. Project Structure
-- [src/app.ts](backend/Production/src/app.ts): Application entry point and middleware/route registration.
+- [src/app.ts](Production/src/app.ts): Application entry point and middleware/route registration.
 - `src/routes/`: Route definitions for various modules.
 - `src/controllers/`: Request handling logic.
 - `src/services/`: Core business logic and external integrations (AI, Email, SMS, Gamification).
@@ -65,8 +65,8 @@ The backend is a Node.js/Express application designed to manage a gamified educa
 ## 4. Pending Tasks / Left to Do
 
 ### Communication Delivery
-- **Real SMS Delivery**: [Msg91SmsProvider](backend/Production/src/services/smsProvider.ts#17-24) and [TwilioSmsProvider](backend/Production/src/services/smsProvider.ts#25-32) currently log to console. Integration with their respective APIs is pending.
-- **Notification Delivery**: The notification logic ([sendNotification](backend/Production/src/controllers/admin.notifications.controller.ts#30-74)) creates records but lacks the actual triggering of Push Notifications (OneSignal/FCM) or WebSockets.
+- **Real SMS Delivery**: [Msg91SmsProvider](Production/src/services/smsProvider.ts#17-24) and [TwilioSmsProvider](Production/src/services/smsProvider.ts#25-32) currently log to console. Integration with their respective APIs is pending.
+- **Notification Delivery**: The notification logic ([sendNotification](Production/src/controllers/admin.notifications.controller.ts#30-74)) creates records but lacks the actual triggering of Push Notifications (OneSignal/FCM) or WebSockets.
 
 ### Feature Enhancements
 - **Advanced Analytics**: Some analytics endpoints provides basic data; more complex reporting (retention, cohort analysis) is not yet fully implemented.
