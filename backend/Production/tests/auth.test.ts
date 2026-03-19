@@ -33,7 +33,8 @@ describe("Auth OTP flow", () => {
 
     expect(res.status).toBe(200);
 
-    const rec = await Otp.findOne({ phone: "1234567890" });
+    const normalizedPhone = "+911234567890";
+    const rec = await Otp.findOne({ phone: normalizedPhone });
     expect(rec).toBeTruthy();
   });
 
@@ -60,8 +61,11 @@ describe("Auth OTP flow", () => {
       .post("/v1/auth/request-otp")
       .send({ phone });
 
+    const normalizedPhone = phone.replace(/\D/g, "");
+    const finalPhone = normalizedPhone.length === 10 ? `+91${normalizedPhone}` : normalizedPhone;
+
     const knownOtp = "123456";
-    const rec = await Otp.findOne({ phone });
+    const rec = await Otp.findOne({ phone: finalPhone });
     if (!rec) throw new Error("OTP record missing");
 
     rec.otpHash = await bcrypt.hash(knownOtp, 10);

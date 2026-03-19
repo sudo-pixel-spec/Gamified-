@@ -1,8 +1,8 @@
 import { Response } from "express";
 import { z } from "zod";
-import { ok, fail } from "../utils/apiResponse.js";
-import { AuthRequest } from "../middleware/auth.js";
-import { User } from "../models/User.js";
+import { ok, fail } from "../utils/apiResponse";
+import { AuthRequest } from "../middleware/auth";
+import { User } from "../models/User";
 
 export async function getMe(req: AuthRequest, res: Response) {
   if (!req.user) return res.status(401).json(fail("NO_AUTH", "Not authenticated"));
@@ -22,7 +22,9 @@ export async function getMe(req: AuthRequest, res: Response) {
       totalXP: userData.totalXP,
       level: userData.level,
       streakCount: userData.streakCount,
-      wallet: userData.wallet
+      wallet: userData.wallet,
+      adminType: userData.adminType,
+      allocatedStandards: userData.allocatedStandards
     })
   );
 }

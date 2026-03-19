@@ -88,7 +88,9 @@ describe("Attempts submit", () => {
     expect(res.body.data.total).toBe(3);
     expect(res.body.data.xpAwarded).toBeGreaterThan(0);
 
-    const user = await User.findOne({ phone: "1111111111" });
+    const normalizedPhone = "1111111111";
+    const finalPhone = `+91${normalizedPhone}`;
+    const user = await User.findOne({ phone: finalPhone });
     expect(user).toBeTruthy();
     expect(user!.totalXP).toBe(res.body.data.xpAwarded);
     expect(user!.wallet?.coins).toBe(res.body.data.coinsAwarded);
@@ -126,7 +128,9 @@ describe("Attempts submit", () => {
     expect(res.body.data.score).toBe(3);
     expect(res.body.data.diamondsAwarded).toBeGreaterThan(0);
 
-    const user = await User.findOne({ phone: "2222222222" });
+    const normalizedPhone = "2222222222";
+    const finalPhone = `+91${normalizedPhone}`;
+    const user = await User.findOne({ phone: finalPhone });
     expect(user!.wallet?.diamonds).toBe(res.body.data.diamondsAwarded);
   });
 
@@ -153,7 +157,9 @@ describe("Attempts submit", () => {
     expect(res1.status).toBe(200);
     expect(res2.status).toBe(200);
 
-    const user = await User.findOne({ phone: "3333333333" });
+    const normalizedPhone = "3333333333";
+    const finalPhone = `+91${normalizedPhone}`;
+    const user = await User.findOne({ phone: finalPhone });
     expect(user).toBeTruthy();
 
     const attempts = await Attempt.find({}).lean();

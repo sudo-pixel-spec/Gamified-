@@ -14,7 +14,10 @@ async function loginAndGetAccessToken(app: any, phone: string) {
   await request(app).post("/v1/auth/request-otp").send({ phone });
 
   const knownOtp = "123456";
-  const rec = await Otp.findOne({ phone });
+  const normalizedPhone = phone.replace(/\D/g, "");
+  const finalPhone = normalizedPhone.length === 10 ? `+91${normalizedPhone}` : normalizedPhone;
+
+  const rec = await Otp.findOne({ phone: finalPhone });
   if (!rec) throw new Error("OTP record missing");
   rec.otpHash = await bcrypt.hash(knownOtp, 10);
   await rec.save();

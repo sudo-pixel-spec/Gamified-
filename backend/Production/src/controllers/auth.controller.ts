@@ -1,4 +1,6 @@
 import type { Request, Response } from "express";
+import fs from "fs";
+import path from "path";
 import { OAuth2Client } from "google-auth-library";
 import { z } from "zod";
 import { ok, fail } from "../utils/apiResponse";
@@ -9,6 +11,7 @@ import { signAccessToken, signRefreshToken, hashToken, verifyToken, compareToken
 import { env } from "../config/env";
 import { enqueueNow } from "../jobs/enqueue";
 import { JOBS } from "../jobs/definitions";
+import { smsProvider } from "../services/smsProvider";
 
 function normalizeIndianPhone(raw: string) {
   const digits = raw.replace(/\D/g, "");
@@ -40,6 +43,7 @@ function setRefreshCookie(res: Response, refreshToken: string) {
 }
 
 export async function requestOtp(req: Request, res: Response) {
+  console.log(`[TRACE] requestOtp hit with body:`, req.body);
   const parsed = RequestOtpSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json(fail("VALIDATION", "Invalid phone number", parsed.error.flatten()));
@@ -48,11 +52,10 @@ export async function requestOtp(req: Request, res: Response) {
   const { phone } = parsed.data;
   const otp = await createOtp(phone, req.ip);
 
-  console.log(`\n============================`);
-  console.log(`📱 MOCK SMS SERVICE`);
-  console.log(`To: ${phone}`);
-  console.log(`Message: Your Gamifyed OTP is ${otp}. Valid for 5 minutes.`);
-  console.log(`============================\n`);
+  await smsProvider.sendOtp(phone, otp);
+
+  const logMsg = `[${new Date().toISOString()}] OTP for ${phone}: ${otp}\n`;
+  fs.appendFileSync(path.join(process.cwd(), "debug_otp.txt"), logMsg);
 
   return res.json(ok({ message: "OTP sent successfully" }));
 }
@@ -98,6 +101,8 @@ export async function verifyOtp(req: Request, res: Response) {
         id: String(user._id),
         phone: user.phone,
         role: user.role,
+        adminType: (user as any).adminType,
+        allocatedStandards: (user as any).allocatedStandards,
         profileComplete: user.profileComplete,
         onboardingComplete: user.onboardingComplete
       }
@@ -191,6 +196,8 @@ export async function googleSignIn(req: Request, res: Response) {
         id: String(user!._id),
         email: user!.email,
         role: user!.role,
+        adminType: (user as any).adminType,
+        allocatedStandards: (user as any).allocatedStandards,
         profileComplete: user!.profileComplete,
         onboardingComplete: (user as any).onboardingComplete || false
       }

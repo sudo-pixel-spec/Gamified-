@@ -20,7 +20,11 @@ let replset: MongoMemoryReplSet;
 async function makeAdmin(app: any, phone: string) {
   const token = await loginAndGetAccessToken(app, phone);
   await completeProfile(app, token);
-  await User.updateOne({ phone }, { $set: { role: "admin" } });
+
+  const normalizedPhone = phone.replace(/\D/g, "");
+  const finalPhone = normalizedPhone.length === 10 ? `+91${normalizedPhone}` : normalizedPhone;
+
+  await User.updateOne({ phone: finalPhone }, { $set: { role: "admin", adminType: "super" } });
   const token2 = await loginAndGetAccessToken(app, phone);
   return token2;
 }

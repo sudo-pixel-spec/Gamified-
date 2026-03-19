@@ -1,12 +1,14 @@
 import bcrypt from "bcryptjs";
-import { Otp } from "../models/Otp.js";
+import { Otp } from "../models/Otp";
 
 function generateOtp(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 export async function createOtp(phone: string, ip?: string) {
+  console.log(`[TRACE] createOtp called for ${phone}`);
   const otp = generateOtp();
+  console.log(`[TRACE] Generated OTP: ${otp}`);
   const otpHash = await bcrypt.hash(otp, 10);
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
