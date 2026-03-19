@@ -15,7 +15,7 @@ STATUS
 
 ------------------------------------------------------------
 
-[Comprehensive Overview of the current state of the Gamified Learning Backend](backend/Comprehensive overview of backend.md)
+[Comprehensive Overview of the current state of the Gamified Learning Backend](backend/Comprehensive%20overview%20of%20backend.md)
 
 ------------------------------------------------------------
 
