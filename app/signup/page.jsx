@@ -7,11 +7,17 @@ import { setToken } from "../../lib/api";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const OTP_LENGTH = 6;
 
+function formatPhoneDisplay(val) {
+  const digits = val.replace(/\D/g, "").slice(0, 10);
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)} ${digits.slice(5)}`;
+}
+
 export default function SignUpPage() {
   const router = useRouter();
 
-  const [step, setStep]             = useState("email");
-  const [email, setEmail]           = useState("");
+  const [step, setStep]             = useState("phone");
+  const [phone, setPhone]           = useState("");
   const [digits, setDigits]         = useState(Array(OTP_LENGTH).fill(""));
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState("");
@@ -100,11 +106,11 @@ export default function SignUpPage() {
   }, [router]);
 
   // ── shared OTP sender ────────────────────────────────────────────────
-  const sendOtp = useCallback(async (emailAddr) => {
+  const sendOtp = useCallback(async (phoneNum) => {
     const res = await fetch(`${API}/v1/auth/request-otp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: emailAddr }),
+      body: JSON.stringify({ phone: phoneNum }),
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json?.error?.message ?? "Failed to send OTP");
@@ -114,9 +120,14 @@ export default function SignUpPage() {
   const handleRequestOtp = async (e) => {
     e.preventDefault();
     setError("");
+    const raw = phone.replace(/\D/g, "");
+    if (raw.length !== 10) {
+      setError("Please enter a valid 10-digit mobile number");
+      return;
+    }
     setLoading(true);
     try {
-      await sendOtp(email);
+      await sendOtp(raw);
       setStep("otp");
       setDigits(Array(OTP_LENGTH).fill(""));
       setResend(30);
@@ -138,7 +149,7 @@ export default function SignUpPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email, otp: otpValue }),
+        body: JSON.stringify({ phone: phone.replace(/\D/g, ""), otp: otpValue }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message ?? "Invalid OTP");
@@ -152,7 +163,7 @@ export default function SignUpPage() {
     } finally {
       setLoading(false);
     }
-  }, [email, router]);
+  }, [phone, router]);
 
   // ── resend ───────────────────────────────────────────────────────────
   const handleResend = async () => {
@@ -160,7 +171,7 @@ export default function SignUpPage() {
     setError("");
     setLoading(true);
     try {
-      await sendOtp(email);
+      await sendOtp(phone.replace(/\D/g, ""));
       setResend(30);
       setDigits(Array(OTP_LENGTH).fill(""));
       setTimeout(() => digitRefs.current[0]?.focus(), 80);
@@ -195,6 +206,8 @@ export default function SignUpPage() {
     if (pasted.length === OTP_LENGTH) handleVerifyOtp(pasted);
   };
 
+  const maskedPhone = `+91 ${phone.replace(/\D/g, "").slice(0, 5)} ${phone.replace(/\D/g, "").slice(5)}`;
+
   return (
     <>
       <style>{`
@@ -225,11 +238,12 @@ export default function SignUpPage() {
         .card { background:var(--surface); border:1px solid var(--border); border-radius:22px; padding:32px; backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); box-shadow:0 0 0 1px rgba(255,255,255,.02),0 32px 64px rgba(0,0,0,.5); }
         .error-box { background:rgba(220,50,40,.12); border:1px solid rgba(220,50,40,.35); border-radius:10px; padding:11px 14px; font-size:13px; color:#f87171; margin-bottom:20px; animation:shake .35s ease; }
         .field-label { display:block; font-size:11.5px; font-weight:500; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px; }
-        .input-wrap { position:relative; }
-        .input-icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--text-muted); font-size:15px; pointer-events:none; }
-        .text-input { width:100%; padding:13px 16px 13px 40px; background:rgba(255,255,255,.05); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-family:var(--font-body); font-size:15px; outline:none; transition:border-color .2s,box-shadow .2s; -webkit-appearance:none; }
-        .text-input::placeholder { color:var(--text-muted); }
-        .text-input:focus { border-color:var(--border-focus); box-shadow:0 0 0 3px rgba(255,92,26,.10); }
+        .phone-wrap { display:flex; align-items:stretch; gap:0; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; transition:border-color .2s, box-shadow .2s; }
+        .phone-wrap:focus-within { border-color:var(--border-focus); box-shadow:0 0 0 3px rgba(255,92,26,.10); }
+        .phone-prefix { display:flex; align-items:center; gap:6px; padding:0 14px; background:rgba(255,255,255,.04); border-right:1px solid var(--border); font-size:15px; color:var(--text-muted); white-space:nowrap; user-select:none; font-family:var(--font-body); }
+        .flag { font-size:18px; line-height:1; }
+        .phone-input { flex:1; padding:13px 16px; background:transparent; border:none; color:var(--text); font-family:var(--font-body); font-size:15px; outline:none; letter-spacing:.05em; -webkit-appearance:none; }
+        .phone-input::placeholder { color:var(--text-muted); letter-spacing:0; }
         .btn-primary { width:100%; padding:13.5px; background:var(--accent); border:none; border-radius:var(--radius); color:#fff; font-family:var(--font-display); font-size:15px; font-weight:700; cursor:pointer; transition:background .18s,transform .1s,box-shadow .2s; margin-top:20px; box-shadow:0 4px 20px rgba(255,92,26,.25); }
         .btn-primary:hover:not(:disabled) { background:#ff6e30; box-shadow:0 6px 28px rgba(255,92,26,.4); }
         .btn-primary:active:not(:disabled) { transform:scale(.98); }
@@ -274,19 +288,23 @@ export default function SignUpPage() {
           <div className="card">
             {error && <div className="error-box" key={error}>{error}</div>}
 
-            {step === "email" ? (
-              <form key="email-step" className="step-enter" onSubmit={handleRequestOtp}>
-                <label className="field-label" htmlFor="email-input">Email address</label>
-                <div className="input-wrap">
-                  <span className="input-icon">✉</span>
+            {step === "phone" ? (
+              <form key="phone-step" className="step-enter" onSubmit={handleRequestOtp}>
+                <label className="field-label" htmlFor="phone-input">Mobile number</label>
+                <div className="phone-wrap">
+                  <div className="phone-prefix">
+                    <span className="flag">🇮🇳</span>
+                    <span>+91</span>
+                  </div>
                   <input
-                    id="email-input"
-                    className="text-input"
-                    type="email"
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    id="phone-input"
+                    className="phone-input"
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="98765 43210"
+                    autoComplete="tel-national"
+                    value={formatPhoneDisplay(phone)}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                     required
                     autoFocus
                   />
@@ -298,7 +316,7 @@ export default function SignUpPage() {
               </form>
             ) : (
               <div key="otp-step" className="step-enter">
-                <p className="otp-hint">Code sent to <strong>{email}</strong></p>
+                <p className="otp-hint">Code sent to <strong>{maskedPhone.trim()}</strong></p>
                 <label className="field-label" style={{ textAlign: "center", display: "block" }}>
                   Enter your code
                 </label>
@@ -334,13 +352,13 @@ export default function SignUpPage() {
                 </div>
 
                 <button type="button" className="back-btn"
-                  onClick={() => { setStep("email"); setError(""); setDigits(Array(OTP_LENGTH).fill("")); }}>
-                  ← Use a different email
+                  onClick={() => { setStep("phone"); setError(""); setDigits(Array(OTP_LENGTH).fill("")); }}>
+                  ← Use a different number
                 </button>
               </div>
             )}
 
-            <div className="divider">or</div>
+            <div className="divider">or continue with email</div>
             <div className="google-wrap"><div ref={googleBtnRef} /></div>
           </div>
 

@@ -30,7 +30,7 @@
     "**/*.mts",
     "**/*.ts",
     "**/*.tsx"
-  ],
+, "components/LessonVideoPanel.jsx"  ],
   "exclude": [
     "node_modules"
   ]

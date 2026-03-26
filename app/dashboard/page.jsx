@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { getToken } from "../../lib/api";
 import Image from "next/image";
+import { apiFetch } from "../../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
-async function api(path, { method = "GET", token, body } = {}) {
+async function apifetch(path, { method = "GET", token, body } = {}) {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: {
@@ -50,8 +51,8 @@ export default function Dashboard() {
       setLoading(true);
       try {
         const [meData, growthData] = await Promise.all([
-          api("/v1/me", { token }),
-          api("/v1/leaderboards/weekly-growth", { token }),
+          apifetch("/v1/me", { token }),
+          apifetch("/v1/leaderboards/weekly-growth", { token }),
         ]);
         if (cancelled) return;
 
@@ -64,7 +65,7 @@ export default function Dashboard() {
         const stdKey = meData?.profile?.standard;
         if (stdKey) {
           try {
-            const subData = await api(`/v1/admin/subjects?standard=${encodeURIComponent(stdKey)}`, { token });
+            const subData = await apifetch(`/v1/admin/subjects?standard=${encodeURIComponent(stdKey)}`, { token });
             if (!cancelled) setSubjects(Array.isArray(subData) ? subData : subData?.items ?? subData?.subjects ?? []);
           } catch { /* subjects fetch is non-critical */ }
         }

@@ -3,36 +3,28 @@
 import { useState, useCallback } from "react";
 import { updateLesson } from "../lib/admin-api";
 
-interface Script {
-  hook:        string;
-  explanation: string;
-  example:     string;
-  summary:     string;
-  fullScript:  string;
+// ── YouTube helpers ────────────────────────────────────────────────────────
+
+function isYouTube(url = "") {
+  return url.includes("youtube.com") || url.includes("youtu.be");
 }
 
-type Stage = "idle" | "generating" | "ready" | "saving" | "saved" | "error";
-
-interface Props {
-  lessonId:         string;
-  lessonTitle:      string;
-  lessonContent?:   string;
-  chapterName?:     string;
-  subjectName?:     string;
-  currentVideoUrl?: string;
-  onSaved?:         (videoUrl: string) => void;
+function toEmbedUrl(url = "") {
+  return url
+    .replace("watch?v=", "embed/")
+    .replace("youtu.be/", "youtube.com/embed/");
 }
 
 const SECTIONS = [
-  { key: "hook"        as keyof Script, label: "Hook",               emoji: "🎣", hint: "Opening question — ~10 sec", rows: 3 },
-  { key: "explanation" as keyof Script, label: "Explanation",        emoji: "📖", hint: "Core concept — ~40 sec",     rows: 5 },
-  { key: "example"     as keyof Script, label: "Real-World Example", emoji: "🌍", hint: "Indian example — ~20 sec",   rows: 4 },
-  { key: "summary"     as keyof Script, label: "Summary",            emoji: "✅", hint: "Recap + cheer — ~10 sec",    rows: 3 },
-] as const;
+  { key: "hook",        label: "Hook",               emoji: "🎣", hint: "Opening question — ~10 sec", rows: 3 },
+  { key: "explanation", label: "Explanation",        emoji: "📖", hint: "Core concept — ~40 sec",     rows: 5 },
+  { key: "example",     label: "Real-World Example", emoji: "🌍", hint: "Indian example — ~20 sec",   rows: 4 },
+  { key: "summary",     label: "Summary",            emoji: "✅", hint: "Recap + cheer — ~10 sec",    rows: 3 },
+];
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-function extractJSON(raw: string): Record<string, string> {
+function extractJSON(raw) {
   let cleaned = raw
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
@@ -62,10 +54,10 @@ export default function LessonVideoPanel({
   subjectName     = "Data Science",
   currentVideoUrl = "",
   onSaved,
-}: Props) {
-  const [stage,      setStage]      = useState<Stage>(currentVideoUrl ? "saved" : "idle");
-  const [script,     setScript]     = useState<Script | null>(null);
-  const [editingKey, setEditingKey] = useState<keyof Script | null>(null);
+}) {
+  const [stage,      setStage]      = useState(currentVideoUrl ? "saved" : "idle");
+  const [script,     setScript]     = useState(null);
+  const [editingKey, setEditingKey] = useState(null);
   const [videoUrl,   setVideoUrl]   = useState(currentVideoUrl);
   const [urlInput,   setUrlInput]   = useState(currentVideoUrl);
   const [error,      setError]      = useState("");
@@ -121,10 +113,10 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
-  temperature: 0.7,
-  maxOutputTokens: 2048,
-  responseMimeType: "application/json",
-},
+              temperature: 0.7,
+              maxOutputTokens: 2048,
+              responseMimeType: "application/json",
+            },
           }),
         }
       );
@@ -140,7 +132,7 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
 
       const parsed = extractJSON(raw);
 
-      for (const k of ["hook", "explanation", "example", "summary"] as const) {
+      for (const k of ["hook", "explanation", "example", "summary"]) {
         if (!parsed[k]) throw new Error(`Missing field in Gemini response: "${k}"`);
       }
 
@@ -154,7 +146,7 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
           .join("\n\n"),
       });
       setStage("ready");
-    } catch (e: unknown) {
+    } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong generating the script");
       setStage("error");
     }
@@ -162,7 +154,7 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
 
   // ── edit / copy ───────────────────────────────────────────────────────────
 
-  const handleEdit = (key: keyof Script, value: string) => {
+  const handleEdit = (key, value) => {
     if (!script) return;
     const updated = { ...script, [key]: value };
     if (key !== "fullScript") {
@@ -190,7 +182,7 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
       setVideoUrl(url);
       setStage("saved");
       onSaved?.(url);
-    } catch (e: unknown) {
+    } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save video URL");
       setStage("ready");
     }
@@ -199,7 +191,7 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="mt-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-card-dark overflow-hidden">
+    <div className="mt-3 rounded-xl border border-slate-200 dark:border-white/20 bg-white dark:bg-slate-900 overflow-hidden">
       {/* header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/10">
         <div className="flex items-center gap-2">
@@ -230,7 +222,7 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
         {/* idle */}
         {stage === "idle" && (
           <div className="space-y-3">
-            <div className="rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] p-5 text-center">
+            <div className="rounded-xl border border-dashed border-slate-200 dark:border-white/20 bg-slate-50 dark:bg-white/10 p-5 text-center">
               <div className="text-3xl mb-2">🎬</div>
               <p className="text-xs text-slate-500">
                 No video yet. Generate a script with AI, create in D-ID Studio (free), paste URL back here.
@@ -269,7 +261,7 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
           <div className="space-y-3">
             {SECTIONS.map(({ key, label, emoji, hint, rows }) => (
               <div key={key} className="rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-white/[0.03] border-b border-slate-200 dark:border-white/10">
+                <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-white/10 border-b border-slate-200 dark:border-white/10">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm leading-none">{emoji}</span>
                     <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{label}</span>
@@ -301,7 +293,7 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
 
             {/* full script */}
             <details className="rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden">
-              <summary className="px-3 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest cursor-pointer bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/5 transition-colors select-none">
+              <summary className="px-3 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest cursor-pointer bg-slate-50 dark:bg-white/10 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors select-none">
                 Full script — expand to edit &amp; copy
               </summary>
               <div className="p-3">
@@ -361,7 +353,15 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
         {stage === "saved" && videoUrl && (
           <div className="space-y-3">
             <div className="aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-200 dark:border-white/10">
-              <video src={videoUrl} controls className="w-full h-full" />
+              {isYouTube(videoUrl) ? (
+                <iframe
+                  src={toEmbedUrl(videoUrl)}
+                  className="w-full h-full"
+                  allowFullScreen
+                />
+              ) : (
+                <video src={videoUrl} controls className="w-full h-full" />
+              )}
             </div>
             <div className="flex gap-2">
               <a
@@ -399,17 +399,7 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
 
 // ── sub-components ─────────────────────────────────────────────────────────
 
-function UrlInput({
-  urlInput,
-  setUrlInput,
-  onSave,
-  saving,
-}: {
-  urlInput:    string;
-  setUrlInput: (v: string) => void;
-  onSave:      () => void;
-  saving:      boolean;
-}) {
+function UrlInput({ urlInput, setUrlInput, onSave, saving }) {
   return (
     <div className="flex gap-2">
       <input
@@ -418,7 +408,7 @@ function UrlInput({
         value={urlInput}
         onChange={(e) => setUrlInput(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && onSave()}
-        className="flex-1 px-3 py-2.5 text-sm bg-white dark:bg-card-dark border border-slate-200 dark:border-white/10 rounded-xl focus:outline-none focus:border-primary transition-colors min-w-0"
+        className="flex-1 px-3 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/20 rounded-xl focus:outline-none focus:border-primary transition-colors min-w-0"
       />
       <button
         onClick={onSave}
@@ -431,8 +421,8 @@ function UrlInput({
   );
 }
 
-function StagePill({ stage }: { stage: Stage }) {
-  const map: Record<Stage, { label: string; cls: string }> = {
+function StagePill({ stage }) {
+  const map = {
     idle:       { label: "No video",     cls: "bg-slate-100 dark:bg-white/10 text-slate-500" },
     generating: { label: "Writing…",     cls: "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 animate-pulse" },
     ready:      { label: "Script ready", cls: "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300" },
