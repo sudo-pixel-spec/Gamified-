@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { getToken } from "../../lib/api";
 import Image from "next/image";
@@ -38,6 +39,17 @@ export default function Dashboard() {
   const [me, setMe] = useState(null);
   const [growth, setGrowth] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const [isDrawerOpen, setDrawerOpen] = useState(false);
+
+  // Derive last lesson to play
+  const handlePlay = () => {
+    const lastLesson = me?.progress?.lastLessonId || me?.stats?.lastLessonId;
+    if (lastLesson) {
+      router.push(`/lesson?lessonId=${lastLesson}`);
+    } else {
+      router.push("/subjects");
+    }
+  };
 
   // ── fetch live data ──
   useEffect(() => {
@@ -145,9 +157,9 @@ export default function Dashboard() {
                         <span className="text-xl font-display font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent-orange">GAMIFIED</span>
                     </div>
                     <div className="hidden md:flex items-center gap-6">
-                        <a className="text-sm font-medium text-primary" href="#">Dashboard</a>
-                        <a className="text-sm font-medium text-slate-500 hover:text-primary transition-colors" href="#">Courses</a>
-                        <a className="text-sm font-medium text-slate-500 hover:text-primary transition-colors" href="#">Quests</a>
+                        <Link href="/dashboard" className="text-sm font-medium text-primary">Dashboard</Link>
+                        <Link href="/subjects" className="text-sm font-medium text-slate-500 hover:text-primary transition-colors">Courses</Link>
+                        <Link href="/analytics" className="text-sm font-medium text-slate-500 hover:text-primary transition-colors">Analytics</Link>
                     </div>
                 </div>
 
@@ -165,11 +177,17 @@ export default function Dashboard() {
                             <p className="text-xs font-bold leading-none">{name}</p>
                             <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Level {level}</p>
                         </div>
-                        <div className="w-9 h-9 rounded-full ring-2 ring-primary/30 p-0.5">
+                        <Link href="/completeprofile" className="block w-9 h-9 rounded-full ring-2 ring-primary/30 p-0.5 hover:ring-primary/60 transition-all cursor-pointer">
                             <div className="w-full h-full rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary">
                               {firstName.charAt(0).toUpperCase()}
                             </div>
-                        </div>
+                        </Link>
+                        <button 
+                            onClick={() => setDrawerOpen((prev) => !prev)}
+                            className="ml-2 text-slate-400 hover:text-primary transition-colors flex items-center"
+                        >
+                            <span className="material-symbols-rounded text-2xl">menu</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -177,7 +195,7 @@ export default function Dashboard() {
     </nav>
 
     {/* ── main ── */}
-    <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-32">
         {/* hero + level card */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             <div className="lg:col-span-2 flex flex-col justify-center">
@@ -201,6 +219,28 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
             <div className="lg:col-span-3 space-y-8">
+                {/* ── quick actions ── */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Link href="/subjects" className="glass-card bg-blue-500/5 hover:bg-blue-500/10 border border-blue-500/20 p-6 rounded-2xl transition-colors flex items-center gap-4 group">
+                        <div className="w-12 h-12 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <span className="material-symbols-rounded">school</span>
+                        </div>
+                        <div>
+                            <h3 className="font-display font-bold text-lg text-blue-100">Browse Courses</h3>
+                            <p className="text-xs text-blue-300">Explore subjects and lessons</p>
+                        </div>
+                    </Link>
+                    <Link href="/analytics" className="glass-card bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/20 p-6 rounded-2xl transition-colors flex items-center gap-4 group">
+                        <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <span className="material-symbols-rounded">monitoring</span>
+                        </div>
+                        <div>
+                            <h3 className="font-display font-bold text-lg text-emerald-100">View Analytics</h3>
+                            <p className="text-xs text-emerald-300">Track your progress stats</p>
+                        </div>
+                    </Link>
+                </div>
+
                 {/* ── daily revision (live from backend) ── */}
                 <section>
                     <div className="flex justify-between items-center mb-6">
@@ -461,27 +501,64 @@ export default function Dashboard() {
     </main>
 
     {/* ── mobile bottom nav ── */}
-    <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-background-dark border-t border-slate-200 dark:border-white/10 px-6 py-3 flex justify-between items-center">
-        <button className="flex flex-col items-center gap-1">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-background-dark border-t border-slate-200 dark:border-white/10 px-6 py-3 pb-safe flex justify-between items-center">
+        <Link href="/dashboard" className="flex flex-col items-center gap-1">
             <span className="material-symbols-rounded text-primary">grid_view</span>
-            <span className="text-[10px] font-bold">Home</span>
-        </button>
-        <button className="flex flex-col items-center gap-1 text-slate-400">
+            <span className="text-[10px] font-bold text-primary">Home</span>
+        </Link>
+        <Link href="/subjects" className="flex flex-col items-center gap-1 text-slate-400 hover:text-primary transition-colors">
             <span className="material-symbols-rounded">school</span>
             <span className="text-[10px] font-bold">Learn</span>
-        </button>
-        <div className="bg-primary -mt-8 w-12 h-12 rounded-full flex items-center justify-center shadow-lg shadow-primary/40">
+        </Link>
+        <button onClick={handlePlay} className="bg-primary -mt-8 w-12 h-12 rounded-full flex items-center justify-center shadow-lg shadow-primary/40 hover:scale-105 transition-transform">
             <span className="material-symbols-rounded text-white">play_arrow</span>
-        </div>
-        <button className="flex flex-col items-center gap-1 text-slate-400">
+        </button>
+        <Link href="/leaderboard" className="flex flex-col items-center gap-1 text-slate-400 hover:text-primary transition-colors">
             <span className="material-symbols-rounded">leaderboard</span>
             <span className="text-[10px] font-bold">Rank</span>
-        </button>
-        <button className="flex flex-col items-center gap-1 text-slate-400">
+        </Link>
+        <Link href="/completeprofile" className="flex flex-col items-center gap-1 text-slate-400 hover:text-primary transition-colors">
             <span className="material-symbols-rounded">person</span>
             <span className="text-[10px] font-bold">Profile</span>
-        </button>
+        </Link>
     </div>
+
+    {/* ── side drawer ── */}
+    {isDrawerOpen && (
+        <div className="fixed inset-0 z-[60] flex justify-end">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDrawerOpen(false)}></div>
+            <div className="relative w-64 h-full bg-background-dark border-l border-white/10 flex flex-col p-6 animate-in slide-in-from-right duration-200">
+                <div className="flex items-center justify-between mb-8">
+                    <span className="text-xl font-display font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent-orange">MENU</span>
+                    <button onClick={() => setDrawerOpen(false)} className="text-slate-400 hover:text-primary">
+                        <span className="material-symbols-rounded">close</span>
+                    </button>
+                </div>
+                <div className="flex flex-col gap-4 flex-1">
+                    <Link href="/dashboard" className="flex items-center gap-3 text-lg font-medium text-slate-200 hover:text-primary transition-colors">
+                        <span className="material-symbols-rounded">dashboard</span> Dashboard
+                    </Link>
+                    <Link href="/subjects" className="flex items-center gap-3 text-lg font-medium text-slate-200 hover:text-primary transition-colors">
+                        <span className="material-symbols-rounded">school</span> Courses
+                    </Link>
+                    <Link href="/analytics" className="flex items-center gap-3 text-lg font-medium text-slate-200 hover:text-primary transition-colors">
+                        <span className="material-symbols-rounded">monitoring</span> Analytics
+                    </Link>
+                    <Link href="/leaderboard" className="flex items-center gap-3 text-lg font-medium text-slate-200 hover:text-primary transition-colors">
+                        <span className="material-symbols-rounded">leaderboard</span> Leaderboard
+                    </Link>
+                    <Link href="/completeprofile" className="flex items-center gap-3 text-lg font-medium text-slate-200 hover:text-primary transition-colors">
+                        <span className="material-symbols-rounded">person</span> Profile
+                    </Link>
+                </div>
+                <div className="mt-auto border-t border-white/10 pt-4">
+                    <button onClick={() => { localStorage.removeItem("accessToken"); router.push("/login"); }} className="flex items-center w-full gap-3 text-lg font-medium text-red-500 hover:text-red-400 transition-colors">
+                        <span className="material-symbols-rounded">logout</span> Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+    )}
     </>
   );
 }

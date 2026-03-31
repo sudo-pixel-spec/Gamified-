@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { getToken, restoreSession } from "../lib/api";
+import { useRouter, usePathname } from "next/navigation";
+import { getToken, restoreSession, apiFetch } from "../lib/api";
 
 export function useRequireAuth() {
   const router = useRouter();
+  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
 
@@ -18,12 +19,29 @@ export function useRequireAuth() {
           router.push("/login");
           return;
         }
-        setUser(restored);
       }
+
+      // Fetch user data to verify profile completion
+      try {
+        const meData = await apiFetch("/v1/me");
+        const profileUser = meData?.data || meData?.user || meData; // Account for generic wrapper
+        
+        if (profileUser) {
+          setUser(profileUser);
+          
+          // Redirect to complete profile if not completed
+          if (!profileUser.profileComplete && pathname !== "/completeprofile") {
+            router.push("/completeprofile");
+          }
+        }
+      } catch (err) {
+        console.error("Auth check failed:", err);
+      }
+      
       setLoading(false);
     };
     check();
-  }, [router]);
+  }, [router, pathname]);
 
   return { user, loading };
 }
