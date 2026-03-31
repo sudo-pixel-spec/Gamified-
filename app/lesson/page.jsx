@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { apiFetch } from "../../lib/api";
 import { listLessons } from "../../lib/admin-api";
-import GameRenderer from "../../components/games/GameRenderer";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -35,22 +34,12 @@ function toEmbedUrl(url="") {
     .replace("youtu.be/", "youtube.com/embed/");
 }
 
-// ── parseEnvelope: unpacks the JSON stored in q.explanation ───────────────
-// Games are saved as quiz question envelopes where explanation is a JSON
-// string containing { gameType, xp, gameData }. GameRenderer needs these
-// fields at the top level of the object, not buried inside explanation.
-function parseEnvelope(q) {
-  try {
-    const parsed = JSON.parse(q.explanation || "{}");
-    return { ...q, ...parsed };
-  } catch { return q; }
-}
-
 // ── VideoPlayer ────────────────────────────────────────────────────────────
 
 function VideoPlayer({ videoUrl, lessonTitle }) {
   const [playing, setPlaying] = useState(false);
 
+  // No video set yet
   if (!videoUrl) {
     return (
       <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-slate-200 dark:bg-card-dark border border-slate-200 dark:border-slate-800 shadow-2xl flex items-center justify-center">
@@ -62,6 +51,7 @@ function VideoPlayer({ videoUrl, lessonTitle }) {
     );
   }
 
+  // YouTube embed
   if (isYouTube(videoUrl)) {
     return (
       <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl">
@@ -76,6 +66,7 @@ function VideoPlayer({ videoUrl, lessonTitle }) {
     );
   }
 
+  // D-ID / direct video URL
   return (
     <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl group">
       {!playing ? (
@@ -114,7 +105,7 @@ function VideoPlayer({ videoUrl, lessonTitle }) {
 // ── main page content ──────────────────────────────────────────────────────
 
 function LessonPageContent() {
-  const router       = useRouter();
+  const router      = useRouter();
   const searchParams = useSearchParams();
   const { loading: authLoading } = useRequireAuth();
 
@@ -122,9 +113,6 @@ function LessonPageContent() {
   const [lesson,      setLesson]      = useState(null);
   const [lessonError, setLessonError] = useState("");
   const [loading,     setLoading]     = useState(true);
-  const [quizDoc,     setQuizDoc]     = useState(null);   // scored quiz only
-  // FIX: separate state for game activities (version=999 doc, never published)
-  const [games,       setGames]       = useState([]);
 
   const lessonId = qv(searchParams, "lessonId", "");
 
@@ -152,33 +140,6 @@ function LessonPageContent() {
           } else {
             setLessonError("Lesson details could not be loaded.");
           }
-
-          if (lessonId) {
-            try {
-              const res  = await apiFetch(`/v1/admin/quizzes/latest?lessonId=${lessonId}`);
-              const docs = res?.data ?? res;
-              const arr  = Array.isArray(docs) ? docs : (docs ? [docs] : []);
-
-              // Separate games doc (version=999) from real scored quiz
-              const gamesDoc    = arr.find((d) => d?.version === 999) ?? null;
-              const realQuizArr = arr.filter((d) => d?.version !== 999);
-
-              // Scored quiz: prefer published, fall back to most recent
-              const published = realQuizArr.find((d) => d?.isPublished === true);
-              const best      = published ?? realQuizArr[0] ?? null;
-              if (best?.questions?.length) setQuizDoc(best);
-
-              // Parse game envelopes so GameRenderer gets { gameType, xp, gameData }
-              if (gamesDoc?.questions?.length) {
-                const parsed = gamesDoc.questions
-                  .filter((q) => q?.qid !== "__placeholder__" && q?.prompt !== "__placeholder__")
-                  .map(parseEnvelope);
-                if (!cancelled) setGames(parsed);
-              }
-            } catch {
-              // no quiz/games yet — silent fail
-            }
-          }
         }
       } catch {
         if (!cancelled) {
@@ -194,29 +155,22 @@ function LessonPageContent() {
     return () => { cancelled = true; };
   }, [authLoading, lessonId]);
 
-  // ── derived quiz values ─────────────────────────────────────────────────
-
-  // XP offered by the quiz itself, or fall back to lesson XP field
-  const quizXP        = quizDoc?.xpReward ?? quizDoc?.xp ?? null;
-  const questionCount = quizDoc?.questions?.length ?? 0;
-
-  // ── START ACTIVITY handler ──────────────────────────────────────────────
-  function handleStartActivity() {
-    if (!quizDoc) return;
-    const quizId = quizDoc?._id ?? quizDoc?.id ?? "";
-    router.push(`/quiz?lessonId=${lessonId}&quizId=${quizId}`);
-  }
-
   // ── derived values from lesson ──────────────────────────────────────────
 
-  const lessonTitle   = lesson?.title       || lesson?.name          || qv(searchParams, "title",       "Lesson");
-  const moduleLabel   = lesson?.unitName    || lesson?.unit?.name    || qv(searchParams, "module",      "Module");
-  const chapterTitle  = lesson?.chapterName || lesson?.chapter?.name || qv(searchParams, "chapter",     "Chapter");
-  const description   = lesson?.description || lesson?.summary       || qv(searchParams, "description", "");
-  const videoUrl      = lesson?.videoUrl    || "";
-  const lessonContent = lesson?.contentText || lesson?.content       || "";
-  const lessonXP      = quizXP ?? lesson?.xp ?? lesson?.points ?? null;
-  const tags          = Array.isArray(lesson?.tags) ? lesson.tags : [];
+  const lessonTitle  = lesson?.title       || lesson?.name        || qv(searchParams, "title",       "Lesson");
+  const moduleLabel  = lesson?.unitName    || lesson?.unit?.name  || qv(searchParams, "module",      "Module");
+  const chapterTitle = lesson?.chapterName || lesson?.chapter?.name || qv(searchParams, "chapter",   "Chapter");
+  const description  = lesson?.description || lesson?.summary     || qv(searchParams, "description", "");
+  const videoUrl     = lesson?.videoUrl    || "";
+
+  // contentText is the rich lesson body; fall back to content or description
+  const lessonContent = lesson?.contentText || lesson?.content || "";
+
+  // XP this lesson awards (default 100 if not set)
+  const lessonXP = lesson?.xp ?? lesson?.points ?? 100;
+
+  // Tags / topics from lesson (e.g. lesson.tags = ["Data Types", "Variables"])
+  const tags = Array.isArray(lesson?.tags) ? lesson.tags : [];
 
   // ── learner stats ───────────────────────────────────────────────────────
 
@@ -225,7 +179,7 @@ function LessonPageContent() {
     return fullName.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("");
   }, [me]);
 
-  const streak  = me?.streakCount ?? 0;
+  const streak = me?.streakCount ?? 0;
   const totalXP = me?.totalXP ?? 0;
 
   // ── streak calendar (last 7 days) ───────────────────────────────────────
@@ -349,34 +303,11 @@ function LessonPageContent() {
               )}
             </article>
 
-            {/* ── 🎮 Games / Practice Questions Section ────────────────── */}
-            {/* FIX: uses the separate `games` state, not quizDoc?.questions  */}
-            {games.length > 0 && (
-              <section className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <span className="material-icons-round text-primary">sports_esports</span>
-                  <h3 className="text-lg font-bold">Practice Games</h3>
-                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
-                    {games.length}
-                  </span>
-                </div>
-                {games.map((game, idx) => (
-                  <GameRenderer key={game.qid ?? game._id ?? idx} game={game} lessonId={lessonId} />
-                ))}
-              </section>
-            )}
-            {/* ─────────────────────────────────────────────────────────── */}
-
             {/* mobile CTA */}
             <div className="lg:hidden">
-              <button
-                type="button"
-                onClick={handleStartActivity}
-                disabled={!quizDoc}
-                className="w-full bg-primary hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-display font-bold py-5 rounded-xl shadow-lg shadow-orange-500/20 flex items-center justify-center gap-3 transition-all active:scale-95"
-              >
-                {quizDoc ? "START ACTIVITY" : "NO ACTIVITY YET"}
-                <span className="material-icons-round">{quizDoc ? "rocket_launch" : "pending"}</span>
+              <button className="w-full bg-primary hover:bg-orange-600 text-white font-display font-bold py-5 rounded-xl shadow-lg shadow-orange-500/20 flex items-center justify-center gap-3 transition-all active:scale-95">
+                START ACTIVITY
+                <span className="material-icons-round">rocket_launch</span>
               </button>
             </div>
           </div>
@@ -385,63 +316,45 @@ function LessonPageContent() {
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-card-light dark:bg-card-dark p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm sticky top-24">
 
-              {/* XP reward badge — only shown when we have real XP data */}
-              {lessonXP != null && (
-                <div className="flex items-center justify-between mb-6 p-3 rounded-xl bg-primary/5 border border-primary/20">
-                  <div className="flex items-center gap-2">
-                    <span className="material-icons-round text-primary">stars</span>
-                    <span className="text-sm font-bold text-primary">Earn {lessonXP} XP</span>
+              {/* XP reward badge */}
+              <div className="flex items-center justify-between mb-6 p-3 rounded-xl bg-primary/5 border border-primary/20">
+                <div className="flex items-center gap-2">
+                  <span className="material-icons-round text-primary">stars</span>
+                  <span className="text-sm font-bold text-primary">Earn {lessonXP} XP</span>
+                </div>
+                <span className="text-xs text-slate-500">Complete this lesson</span>
+              </div>
+
+              {/* activities */}
+              <div className="space-y-4 mb-8">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Activities</h4>
+
+                <div className="flex items-center gap-4 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer">
+                  <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
+                    <span className="material-icons-round text-primary">quiz</span>
                   </div>
-                  <span className="text-xs text-slate-500">Complete this lesson</span>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-bold truncate">Concept Check</h4>
+                    <p className="text-xs text-slate-500">5 Questions • 50 XP</p>
+                  </div>
+                  <span className="material-icons-round text-slate-300 ml-auto shrink-0">chevron_right</span>
                 </div>
-              )}
 
-              {/* activities — driven from real quiz data */}
-              {quizDoc && (
-                <div className="space-y-4 mb-8">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Activities</h4>
-
-                  {/* Concept Check — shown only when quiz has questions */}
-                  {questionCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleStartActivity}
-                      className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
-                    >
-                      <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
-                        <span className="material-icons-round text-primary">quiz</span>
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="text-sm font-bold truncate">
-                          {quizDoc?.title ?? "Concept Check"}
-                        </h4>
-                        <p className="text-xs text-slate-500">
-                          {questionCount} Question{questionCount !== 1 ? "s" : ""}
-                          {quizXP != null ? ` • ${quizXP} XP` : ""}
-                        </p>
-                      </div>
-                      <span className="material-icons-round text-slate-300 ml-auto shrink-0">chevron_right</span>
-                    </button>
-                  )}
+                <div className="flex items-center gap-4 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer">
+                  <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                    <span className="material-icons-round text-blue-500">terminal</span>
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-bold truncate">Interactive Lab</h4>
+                    <p className="text-xs text-slate-500">Practical Session • 150 XP</p>
+                  </div>
+                  <span className="material-icons-round text-slate-300 ml-auto shrink-0">chevron_right</span>
                 </div>
-              )}
+              </div>
 
-              {/* No quiz yet — subtle empty state */}
-              {!quizDoc && !loading && (
-                <div className="mb-8 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-4 text-center">
-                  <span className="material-icons-round text-slate-300 text-3xl">pending</span>
-                  <p className="text-xs text-slate-400 mt-1">No activities published yet</p>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleStartActivity}
-                disabled={!quizDoc}
-                className="w-full bg-primary hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-display font-bold py-4 rounded-xl shadow-lg shadow-orange-500/20 flex items-center justify-center gap-3 transition-all hover:-translate-y-1 active:scale-95"
-              >
-                {quizDoc ? "START ACTIVITY" : "NO ACTIVITY YET"}
-                <span className="material-icons-round">{quizDoc ? "rocket_launch" : "pending"}</span>
+              <button className="w-full bg-primary hover:bg-orange-600 text-white font-display font-bold py-4 rounded-xl shadow-lg shadow-orange-500/20 flex items-center justify-center gap-3 transition-all hover:-translate-y-1 active:scale-95">
+                START ACTIVITY
+                <span className="material-icons-round">rocket_launch</span>
               </button>
 
               {/* streak calendar */}
@@ -475,7 +388,7 @@ function LessonPageContent() {
               </div>
             </div>
 
-            {/* reward nudge — driven by real streak count */}
+            {/* reward nudge — only show if streak is meaningful */}
             {streak >= 10 && (
               <div className="bg-gradient-to-br from-orange-500/10 to-transparent p-4 rounded-2xl border border-primary/20 flex items-center gap-4">
                 <div className="relative">

@@ -13,7 +13,7 @@ export async function GET(request) {
   const result = await mongoose.connection.db
     .collection("users")
     .updateOne(
-      { email: ".com" },
+      { email: "your@email.com" },
       { $set: { role: "admin", isAdmin: true } }
     );
 

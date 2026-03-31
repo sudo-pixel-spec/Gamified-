@@ -15,7 +15,7 @@ function generateIdempotencyKey(lessonId) {
 
 // ── ResultScreen ───────────────────────────────────────────────────────────
 
-function ResultScreen({ result, total, onRetry, onBack }) {
+function ResultScreen({ result, total, onRetry, onBack, onNext }) {
   const pct = Math.round((result.score / total) * 100);
   const passed = pct >= 60;
 
@@ -31,12 +31,8 @@ function ResultScreen({ result, total, onRetry, onBack }) {
         </div>
 
         <div>
-          <h2 className="text-3xl font-display font-bold">
-            {pct}%
-          </h2>
-          <p className="text-slate-500 text-sm mt-1">
-            {result.score} of {total} correct
-          </p>
+          <h2 className="text-3xl font-display font-bold">{pct}%</h2>
+          <p className="text-slate-500 text-sm mt-1">{result.score} of {total} correct</p>
         </div>
 
         {/* rewards */}
@@ -69,11 +65,11 @@ function ResultScreen({ result, total, onRetry, onBack }) {
           </button>
           <button
             type="button"
-            onClick={onBack}
+            onClick={onNext}
             className="flex-1 bg-primary hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
           >
-            <span className="material-icons-round text-sm">arrow_back</span>
-            Back to Lesson
+            <span className="material-icons-round text-sm">arrow_forward</span>
+            Next Lesson
           </button>
         </div>
       </div>
@@ -88,7 +84,9 @@ function QuizPageContent() {
   const searchParams = useSearchParams();
   const { loading: authLoading } = useRequireAuth();
 
-  const lessonId = qv(searchParams, "lessonId", "");
+  const lessonId  = qv(searchParams, "lessonId", "");
+  const subjectId = qv(searchParams, "subjectId", "");
+  const chapterId = qv(searchParams, "chapterId", "");
 
   // ── state ─────────────────────────────────────────────────────────────────
   const [quizDoc,      setQuizDoc]      = useState(null);
@@ -193,11 +191,18 @@ function QuizPageContent() {
       });
 
       const data = res?.data ?? res;
-      setResult(data);
+      // Redirect back to lesson page with completion params so it shows the overlay
+      const params = new URLSearchParams({
+        lessonId,
+        completed: "1",
+        xpAwarded: String(data?.xpAwarded ?? 0),
+        ...(subjectId && { subjectId }),
+        ...(chapterId && { chapterId }),
+      });
+      router.replace(`/lesson?${params.toString()}`);
     } catch (err) {
       const msg = err?.message ?? "Submission failed. Please try again.";
       setSubmitError(msg);
-    } finally {
       setSubmitting(false);
     }
   }
@@ -254,6 +259,16 @@ function QuizPageContent() {
         result={result}
         total={total}
         onRetry={handleRetry}
+        onNext={() => {
+          const params = new URLSearchParams({
+            lessonId,
+            completed: "1",
+            xpAwarded: String(result?.xpAwarded ?? 0),
+            ...(subjectId && { subjectId }),
+            ...(chapterId && { chapterId }),
+          });
+          router.replace(`/lesson?${params.toString()}`);
+        }}
         onBack={() => router.back()}
       />
     );
