@@ -1,5 +1,7 @@
 import "./globals.css";
 import { Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
+import GlobalNav from "../components/GlobalNav";
+import FloatingChatbot from "../components/FloatingChatbot";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -36,7 +38,10 @@ export default function RootLayout({ children }) {
       <body
         className={`${jakarta.className} bg-background-light dark:bg-background-dark text-slate-text dark:text-slate-text-dark`}
       >
-        {children}
+        <GlobalNav>
+          {children}
+        </GlobalNav>
+        <FloatingChatbot />
       </body>
     </html>
   );

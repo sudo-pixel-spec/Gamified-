@@ -6,6 +6,7 @@ import { apiFetch } from "../../lib/api";
 
 export default function CompleteProfilePage() {
   const [fullName, setFullName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -20,6 +21,7 @@ export default function CompleteProfilePage() {
         method: "PATCH",
         body: JSON.stringify({
           fullName,
+          avatarUrl,
           standard: "CBSE_STD_8",
           timezone,
         }),
@@ -62,6 +64,17 @@ export default function CompleteProfilePage() {
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-primary outline-none"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-slate-300 ml-1">PROFILE PHOTO URL (Optional)</label>
+                <input
+                  type="url"
+                  placeholder="https://example.com/your-photo.jpg"
+                  value={avatarUrl}
+                  onChange={(e) => setAvatarUrl(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-primary outline-none"
                 />
               </div>

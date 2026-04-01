@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { apiFetch } from "../../lib/api";
 import { listChapters, listLessons, listSubjects, listUnits } from "../../lib/admin-api";
@@ -10,35 +10,17 @@ import { listChapters, listLessons, listSubjects, listUnits } from "../../lib/ad
 function asArray(res) {
   if (!res) return [];
   if (Array.isArray(res)) return res;
-
-  const directCandidates = [
-    res?.data,
-    res?.items,
-    res?.results,
-    res?.docs,
-    res?.list,
-    res,
-  ];
-
+  const directCandidates = [res?.data, res?.items, res?.results, res?.docs, res?.list, res];
   for (const candidate of directCandidates) {
     if (Array.isArray(candidate)) return candidate;
   }
-
   const nestedArrayCandidates = [
-    res?.data?.items,
-    res?.data?.results,
-    res?.data?.docs,
-    res?.data?.list,
-    res?.data?.subjects,
-    res?.data?.units,
-    res?.data?.chapters,
-    res?.data?.lessons,
+    res?.data?.items, res?.data?.results, res?.data?.docs, res?.data?.list,
+    res?.data?.subjects, res?.data?.units, res?.data?.chapters, res?.data?.lessons,
   ];
-
   for (const candidate of nestedArrayCandidates) {
     if (Array.isArray(candidate)) return candidate;
   }
-
   return [];
 }
 
@@ -62,7 +44,6 @@ function getRelatedId(item, relationKey) {
     if (typeof idField === "object") return String(getId(idField) || "");
     return String(idField);
   }
-
   const relationField = item?.[relationKey];
   if (relationField == null) return "";
   if (typeof relationField === "object") return String(getId(relationField) || "");
@@ -72,12 +53,10 @@ function getRelatedId(item, relationKey) {
 function getEntityKey(item, fallbackFields = []) {
   const id = getId(item);
   if (id != null) return String(id);
-
   for (const field of fallbackFields) {
     const value = item?.[field];
     if (value != null && String(value).trim()) return String(value);
   }
-
   return "";
 }
 
@@ -86,8 +65,7 @@ function matchesStandard(subject, profile) {
   const profileStandardId = profile?.standardId;
   if (!profileStandard && !profileStandardId) return true;
 
-  const subjectStandardId =
-    subject?.standardId ?? subject?.standard?._id ?? subject?.standard?.id;
+  const subjectStandardId = subject?.standardId ?? subject?.standard?._id ?? subject?.standard?.id;
   const subjectStandardCode = subject?.standardCode ?? subject?.standard?.code;
   const subjectStandardName = subject?.standardName ?? subject?.standard?.name;
 
@@ -106,10 +84,12 @@ function ContentStructureInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [me, setMe] = useState(null);
+  const [dashboardHome, setDashboardHome] = useState(null);
   const [subjects, setSubjects] = useState([]);
   const [units, setUnits] = useState([]);
   const [chapters, setChapters] = useState([]);
   const [lessons, setLessons] = useState([]);
+  const [chapterQuiz, setChapterQuiz] = useState({ state: "idle", data: null });
 
   const [selectedSubjectId, setSelectedSubjectId] = useState("");
   const [selectedUnitId, setSelectedUnitId] = useState("");
@@ -119,48 +99,36 @@ function ContentStructureInner() {
 
   useEffect(() => {
     if (authLoading) return;
-
     let cancelled = false;
 
     (async () => {
       setLoading(true);
       setError("");
 
-      const [meRes, subRes, unitRes, chapterRes, lessonRes] = await Promise.allSettled([
+      const [meRes, subRes, unitRes, chapterRes, lessonRes, homeRes] = await Promise.allSettled([
         apiFetch("/v1/me"),
         listSubjects(),
         listUnits(),
         listChapters(),
         listLessons(),
+        apiFetch("/v1/dashboard/home").catch(() => null)
       ]);
 
       if (cancelled) return;
 
       const meData = meRes.status === "fulfilled" ? meRes.value?.data ?? meRes.value : null;
+      const homeData = homeRes.status === "fulfilled" && homeRes.value ? (homeRes.value.data ?? homeRes.value) : null;
       const allSubjects = subRes.status === "fulfilled" ? asArray(subRes.value) : [];
       const allUnits = unitRes.status === "fulfilled" ? asArray(unitRes.value) : [];
       const allChapters = chapterRes.status === "fulfilled" ? asArray(chapterRes.value) : [];
       const allLessons = lessonRes.status === "fulfilled" ? asArray(lessonRes.value) : [];
 
-      if (
-        subRes.status === "rejected" ||
-        unitRes.status === "rejected" ||
-        chapterRes.status === "rejected" ||
-        lessonRes.status === "rejected"
-      ) {
-        const details = [
-          subRes.status === "rejected" ? `subjects: ${errorMessage(subRes.reason, "request failed")}` : null,
-          unitRes.status === "rejected" ? `units: ${errorMessage(unitRes.reason, "request failed")}` : null,
-          chapterRes.status === "rejected" ? `chapters: ${errorMessage(chapterRes.reason, "request failed")}` : null,
-          lessonRes.status === "rejected" ? `lessons: ${errorMessage(lessonRes.reason, "request failed")}` : null,
-        ]
-          .filter(Boolean)
-          .join(" | ");
-
-        setError(`Some curriculum data failed to load. ${details}`);
+      if (subRes.status === "rejected" || unitRes.status === "rejected" || chapterRes.status === "rejected" || lessonRes.status === "rejected") {
+        setError("Some curriculum data failed to load.");
       }
 
       setMe(meData);
+      setDashboardHome(homeData);
       setSubjects(allSubjects);
       setUnits(allUnits);
       setChapters(allChapters);
@@ -168,34 +136,23 @@ function ContentStructureInner() {
 
       const profile = meData?.profile ?? {};
       const visibleSubjects = allSubjects.filter((s) => matchesStandard(s, profile));
-      const initialSubject =
-        visibleSubjects.find((s) => String(getId(s)) === requestedSubjectId) ||
-        visibleSubjects[0] ||
-        allSubjects.find((s) => String(getId(s)) === requestedSubjectId) ||
-        allSubjects[0] ||
-        null;
+      const initialSubject = visibleSubjects.find((s) => String(getId(s)) === requestedSubjectId) || visibleSubjects[0] || allSubjects.find((s) => String(getId(s)) === requestedSubjectId) || allSubjects[0] || null;
 
       const initialSubjectId = getEntityKey(initialSubject, ["code", "name", "title"]);
       setSelectedSubjectId(initialSubjectId);
 
-      const unitsForSubject = allUnits
-        .filter((u) => String(u?.subjectId ?? "") === initialSubjectId)
-        .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
+      const unitsForSubject = allUnits.filter((u) => String(u?.subjectId ?? "") === initialSubjectId).sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
       const initialUnitId = getEntityKey(unitsForSubject[0], ["code", "name", "title", "order"]);
       setSelectedUnitId(initialUnitId);
 
-      const chaptersForUnit = allChapters
-        .filter((c) => String(c?.unitId ?? "") === initialUnitId)
-        .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
+      const chaptersForUnit = allChapters.filter((c) => String(c?.unitId ?? "") === initialUnitId).sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
       const initialChapterId = getEntityKey(chaptersForUnit[0], ["code", "name", "title", "order"]);
       setSelectedChapterId(initialChapterId);
 
       setLoading(false);
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [authLoading, requestedSubjectId]);
 
   const visibleSubjects = useMemo(() => {
@@ -206,67 +163,38 @@ function ContentStructureInner() {
 
   const effectiveSelectedSubjectId = useMemo(() => {
     if (visibleSubjects.length === 0) return "";
-    const hasSelected = visibleSubjects.some(
-      (s) => getEntityKey(s, ["code", "name", "title"]) === String(selectedSubjectId)
-    );
+    const hasSelected = visibleSubjects.some((s) => getEntityKey(s, ["code", "name", "title"]) === String(selectedSubjectId));
     if (hasSelected) return String(selectedSubjectId);
     return getEntityKey(visibleSubjects[0], ["code", "name", "title"]);
   }, [visibleSubjects, selectedSubjectId]);
 
-  const selectedSubject =
-    visibleSubjects.find(
-      (s) => getEntityKey(s, ["code", "name", "title"]) === String(effectiveSelectedSubjectId)
-    ) || visibleSubjects[0] || null;
+  const selectedSubject = visibleSubjects.find((s) => getEntityKey(s, ["code", "name", "title"]) === String(effectiveSelectedSubjectId)) || visibleSubjects[0] || null;
 
   const unitsForSubject = useMemo(() => {
-    const byId = units.filter(
-      (u) => String(getRelatedId(u, "subject")) === String(effectiveSelectedSubjectId)
-    );
-
-    if (byId.length > 0) {
-      return byId.sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
-    }
-
-    // Fallback when API returns text links rather than IDs.
+    const byId = units.filter((u) => String(getRelatedId(u, "subject")) === String(effectiveSelectedSubjectId));
+    if (byId.length > 0) return byId.sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
     const subjectName = normalizeValue(selectedSubject?.name ?? selectedSubject?.title);
     const byName = units.filter((u) => {
-      const unitSubjectName = normalizeValue(
-        u?.subjectName ?? u?.subject?.name ?? u?.subject?.title
-      );
+      const unitSubjectName = normalizeValue(u?.subjectName ?? u?.subject?.name ?? u?.subject?.title);
       return subjectName && unitSubjectName === subjectName;
     });
-
-    if (byName.length > 0) {
-      return byName.sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
-    }
-
+    if (byName.length > 0) return byName.sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
     return [...units].sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
   }, [units, effectiveSelectedSubjectId, selectedSubject]);
 
   const effectiveSelectedUnitId = useMemo(() => {
     if (unitsForSubject.length === 0) return "";
-    const hasSelectedUnit = unitsForSubject.some(
-      (u) => getEntityKey(u, ["code", "name", "title", "order"]) === String(selectedUnitId)
-    );
+    const hasSelectedUnit = unitsForSubject.some((u) => getEntityKey(u, ["code", "name", "title", "order"]) === String(selectedUnitId));
     if (hasSelectedUnit) return String(selectedUnitId);
     return getEntityKey(unitsForSubject[0], ["code", "name", "title", "order"]);
   }, [unitsForSubject, selectedUnitId]);
 
   const chaptersForUnit = useMemo(() => {
-    const byId = chapters
-      .filter((c) => String(getRelatedId(c, "unit")) === String(effectiveSelectedUnitId))
-      .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
-
+    const byId = chapters.filter((c) => String(getRelatedId(c, "unit")) === String(effectiveSelectedUnitId)).sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
     if (byId.length > 0) return byId;
-
-    const selectedUnit = unitsForSubject.find(
-      (u) => getEntityKey(u, ["code", "name", "title", "order"]) === String(effectiveSelectedUnitId)
-    );
+    const selectedUnit = unitsForSubject.find((u) => getEntityKey(u, ["code", "name", "title", "order"]) === String(effectiveSelectedUnitId));
     const unitName = normalizeValue(selectedUnit?.name ?? selectedUnit?.title);
-
-    return chapters
-      .filter((c) => normalizeValue(c?.unitName ?? c?.unit?.name ?? c?.unit?.title) === unitName)
-      .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
+    return chapters.filter((c) => normalizeValue(c?.unitName ?? c?.unit?.name ?? c?.unit?.title) === unitName).sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
   }, [chapters, effectiveSelectedUnitId, unitsForSubject]);
 
   const effectiveChaptersForUnit = useMemo(() => {
@@ -276,75 +204,111 @@ function ContentStructureInner() {
 
   const effectiveSelectedChapterId = useMemo(() => {
     if (effectiveChaptersForUnit.length === 0) return "";
-    const hasSelectedChapter = effectiveChaptersForUnit.some(
-      (c) => getEntityKey(c, ["code", "name", "title", "order"]) === String(selectedChapterId)
-    );
+    const hasSelectedChapter = effectiveChaptersForUnit.some((c) => getEntityKey(c, ["code", "name", "title", "order"]) === String(selectedChapterId));
     if (hasSelectedChapter) return String(selectedChapterId);
     return getEntityKey(effectiveChaptersForUnit[0], ["code", "name", "title", "order"]);
   }, [effectiveChaptersForUnit, selectedChapterId]);
 
   const lessonsForChapter = useMemo(() => {
-    const byId = lessons
-      .filter((l) => String(getRelatedId(l, "chapter")) === String(effectiveSelectedChapterId))
-      .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
-
+    const byId = lessons.filter((l) => String(getRelatedId(l, "chapter")) === String(effectiveSelectedChapterId)).sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
     if (byId.length > 0) return byId;
-
-    const selectedChapter = effectiveChaptersForUnit.find(
-      (c) => getEntityKey(c, ["code", "name", "title", "order"]) === String(effectiveSelectedChapterId)
-    );
+    const selectedChapter = effectiveChaptersForUnit.find((c) => getEntityKey(c, ["code", "name", "title", "order"]) === String(effectiveSelectedChapterId));
     const chapterName = normalizeValue(selectedChapter?.name ?? selectedChapter?.title);
-
-    const byName = lessons
-      .filter((l) => normalizeValue(l?.chapterName ?? l?.chapter?.name ?? l?.chapter?.title) === chapterName)
-      .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
-
+    const byName = lessons.filter((l) => normalizeValue(l?.chapterName ?? l?.chapter?.name ?? l?.chapter?.title) === chapterName).sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
     if (byName.length > 0) return byName;
-
     return [...lessons].sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
   }, [lessons, effectiveSelectedChapterId, effectiveChaptersForUnit]);
 
-  const selectedUnit =
-    unitsForSubject.find(
-      (u) => getEntityKey(u, ["code", "name", "title", "order"]) === String(effectiveSelectedUnitId)
-    ) || null;
-  const selectedChapter =
-    effectiveChaptersForUnit.find(
-      (c) => getEntityKey(c, ["code", "name", "title", "order"]) === String(effectiveSelectedChapterId)
-    ) || null;
+  const selectedUnit = unitsForSubject.find((u) => getEntityKey(u, ["code", "name", "title", "order"]) === String(effectiveSelectedUnitId)) || null;
+  const selectedChapter = effectiveChaptersForUnit.find((c) => getEntityKey(c, ["code", "name", "title", "order"]) === String(effectiveSelectedChapterId)) || null;
+
+  // Verify quiz availability dynamically for current chapter
+  useEffect(() => {
+    if (!effectiveSelectedChapterId) {
+      setChapterQuiz({ state: "idle", data: null });
+      return;
+    }
+    let cancelled = false;
+    setChapterQuiz({ state: "loading", data: null });
+    apiFetch(`/v1/chapters/${effectiveSelectedChapterId}/quiz`)
+      .then(res => {
+        if (!cancelled) setChapterQuiz({ state: "success", data: res?.data ?? res });
+      })
+      .catch(() => {
+        if (!cancelled) setChapterQuiz({ state: "error", data: null });
+      });
+    return () => { cancelled = true; };
+  }, [effectiveSelectedChapterId]);
+
+  // DERIVED DATA & UNLOCK LOGIC
+  const isAdmin = me?.role === "admin";
+  const completedLessonsMap = useMemo(() => {
+    const map = new Set();
+    const dProg = dashboardHome?.progress?.completedLessons || dashboardHome?.completedLessons || [];
+    dProg.forEach(id => map.add(String(id)));
+    const mProg = me?.progress?.completedLessons || [];
+    mProg.forEach(id => map.add(String(id)));
+    lessons.forEach(l => {
+      if (l.completedAt || l.isCompleted) map.add(String(getId(l)));
+    });
+    return map;
+  }, [dashboardHome, me, lessons]);
+
+  const chapterLessonsTotal = lessonsForChapter.length;
+  let chapterLessonsCompleted = 0;
+  lessonsForChapter.forEach(l => {
+    if (completedLessonsMap.has(String(getId(l)))) chapterLessonsCompleted++;
+  });
+  const chapterProgressPct = chapterLessonsTotal === 0 ? 0 : Math.round((chapterLessonsCompleted / chapterLessonsTotal) * 100);
 
   const learnerName = me?.profile?.fullName || "Learner";
+  const firstName = learnerName.split(" ")[0];
   const learnerLevel = me?.level ?? 1;
   const totalXP = me?.totalXP ?? 0;
-  const streak = me?.streakCount ?? 0;
+  const streak = dashboardHome?.streakCount ?? me?.streakCount ?? 0;
+  const avatarUrl = me?.profile?.avatarUrl;
+
+  const allChapterLessonsCompleted = chapterLessonsTotal > 0 && chapterLessonsCompleted === chapterLessonsTotal;
+  const quizUnlocked = isAdmin || allChapterLessonsCompleted;
+  const quizExists = chapterQuiz.state === "success" && chapterQuiz.data;
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
-        <p className="text-sm text-slate-500">Loading structure...</p>
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a]">
+        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white">
-      <div className="flex min-h-screen overflow-hidden bg-stars bg-repeat">
-        <aside className="w-80 shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-card-dark/70 backdrop-blur-xl flex flex-col">
-          <div className="p-6">
+    <div className="min-h-screen bg-[#0a0a0a] text-white">
+      <div className="flex h-screen overflow-hidden bg-[#0a0a0a] bg-stars bg-repeat">
+        
+        {/* Left Navigation Aside (Strict Black/Orange) */}
+        <aside className="w-[340px] shrink-0 border-r border-orange-500/20 bg-[#111111] flex-col z-20 hidden md:flex h-full shadow-2xl">
+          
+          <div className="p-8 pb-4 border-b border-orange-500/10 backdrop-blur-md bg-[#111111]/80 z-10 shrink-0">
             <button
               type="button"
               onClick={() => router.push("/dashboard")}
-              className="flex items-center gap-3 mb-8 hover:opacity-80 transition-opacity"
+              className="flex items-center gap-3 hover:opacity-80 transition-opacity"
             >
-              <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-                <span className="material-symbols-outlined text-white">rocket_launch</span>
-              </div>
-              <span className="font-display font-bold text-xl tracking-wider text-primary">STELLAR</span>
+              <img 
+                src="/images/logo.png" 
+                alt="Gamified Logo" 
+                className="w-10 h-10 drop-shadow-sm" 
+              />
+              <span className="font-display font-black text-2xl tracking-widest text-white">Gamified</span>
             </button>
+          </div>
 
-            <div className="space-y-7">
+          {/* This is the scrolling Index container ! */}
+          <div className="p-8 flex-1 overflow-y-auto no-scrollbar relative pt-6">
+            <div className="space-y-8">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Current Subject</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50 mb-3 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary"></span> Subject Path
+                </p>
                 <select
                   value={effectiveSelectedSubjectId}
                   onChange={(e) => {
@@ -352,16 +316,13 @@ function ContentStructureInner() {
                     setSelectedUnitId("");
                     setSelectedChapterId("");
                   }}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm"
+                  className="w-full rounded-2xl border-2 border-orange-500/30 bg-[#0a0a0a] px-4 py-3 text-sm font-bold text-white shadow-sm focus:border-primary transition-colors focus:outline-none"
                 >
                   {visibleSubjects.length === 0 ? (
-                    <option value="">No subjects</option>
+                    <option value="">No subjects active</option>
                   ) : (
                     visibleSubjects.map((subject) => (
-                      <option
-                        key={getEntityKey(subject, ["code", "name", "title"]) || subject.name}
-                        value={getEntityKey(subject, ["code", "name", "title"])}
-                      >
+                      <option key={getEntityKey(subject, ["code", "name", "title"]) || subject.name} value={getEntityKey(subject, ["code", "name", "title"])}>
                         {subject.name || subject.title || "Subject"}
                       </option>
                     ))
@@ -370,60 +331,80 @@ function ContentStructureInner() {
               </div>
 
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Curriculum Units</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50 mb-4 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary"></span> Curriculum Modules
+                </p>
                 {unitsForSubject.length === 0 ? (
-                  <p className="text-xs text-slate-500">No units available for this subject.</p>
+                  <div className="rounded-xl border border-dashed border-orange-500/20 p-6 text-center text-xs text-white/40">
+                    No active modules found.
+                  </div>
                 ) : (
-                  <ul className="space-y-2">
+                  <ul className="space-y-3">
                     {unitsForSubject.map((unit) => {
                       const unitId = getEntityKey(unit, ["code", "name", "title", "order"]);
-                      const active = unitId === String(effectiveSelectedUnitId);
+                      const activeUnit = unitId === String(effectiveSelectedUnitId);
                       const unitLabel = unit?.name || unit?.title || "Unit";
 
                       return (
-                        <li key={unitId || unitLabel}>
+                        <li key={unitId || unitLabel} className="bg-[#141414] rounded-2xl p-1.5 border border-orange-500/20">
                           <button
                             type="button"
                             onClick={() => {
                               setSelectedUnitId(unitId);
                               setSelectedChapterId("");
                             }}
-                            className={`w-full flex items-center justify-between p-2.5 px-3 text-sm rounded-lg transition-colors ${
-                              active
-                                ? "text-primary bg-primary/10"
-                                : "text-slate-600 dark:text-slate-400 hover:text-primary hover:bg-primary/5"
+                            className={`w-full flex items-center justify-between p-3.5 px-4 text-sm rounded-xl transition-all ${
+                              activeUnit ? "bg-primary text-white font-bold shadow-lg shadow-primary/20" : "text-white/60 hover:text-white"
                             }`}
                           >
-                            <span className="flex items-center gap-2.5 font-medium">
-                              <span className="material-symbols-outlined text-sm">{active ? "adjust" : "radio_button_checked"}</span>
+                            <span className="flex items-center gap-3">
+                              <span className={`material-symbols-rounded text-lg ${activeUnit ? "text-white" : "text-white/40"}`}>
+                                {activeUnit ? "explore" : "radio_button_unchecked"}
+                              </span>
                               {unitLabel}
                             </span>
-                            <span className="material-symbols-outlined text-sm">{active ? "expand_more" : "chevron_right"}</span>
+                            <span className={`material-symbols-rounded text-sm transition-transform ${activeUnit ? "rotate-90 text-white" : ""}`}>chevron_right</span>
                           </button>
 
-                          {active && (
-                            <ul className="mt-1.5 ml-6 space-y-1 border-l border-primary/20">
+                          {activeUnit && (
+                            <ul className="mt-2 mb-2 ml-5 space-y-1 border-l-2 border-orange-500/20 pl-3">
                               {effectiveChaptersForUnit.length === 0 ? (
-                                <li>
-                                  <p className="block p-2 pl-4 text-xs text-slate-500">No chapters yet</p>
-                                </li>
+                                <li><p className="block py-2 text-xs text-white/40">No chapters mapped.</p></li>
                               ) : (
                                 effectiveChaptersForUnit.map((chapter) => {
                                   const chapterId = getEntityKey(chapter, ["code", "name", "title", "order"]);
                                   const chapterActive = chapterId === String(effectiveSelectedChapterId);
                                   return (
-                                    <li key={chapterId || chapter.name}>
+                                    <li key={chapterId || chapter.name} className="py-0.5">
                                       <button
                                         type="button"
                                         onClick={() => setSelectedChapterId(chapterId)}
-                                        className={`w-full text-left block p-2 pl-4 text-xs rounded ${
-                                          chapterActive
-                                            ? "font-semibold text-primary border-l-2 border-primary -ml-[1px]"
-                                            : "text-slate-500 dark:text-slate-400 hover:text-primary"
+                                        className={`w-full text-left flex flex-col justify-center px-3 py-2.5 rounded-lg transition-all ${
+                                          chapterActive ? "bg-primary/10 border border-primary/30" : "hover:bg-white/5"
                                         }`}
                                       >
-                                        {chapter?.name || chapter?.title || "Chapter"}
+                                        <div className={`text-sm ${chapterActive ? "font-bold text-primary" : "font-medium text-white/60"}`}>
+                                          {chapter?.name || chapter?.title || "Chapter"}
+                                        </div>
                                       </button>
+                                      
+                                      <div className={`overflow-hidden transition-all duration-300 ease-in-out ${chapterActive ? "max-h-96 opacity-100 mt-2" : "max-h-0 opacity-0"}`}>
+                                        <ul className="space-y-1.5 pl-3 border-l-[1.5px] border-primary/20 pb-2">
+                                          {lessonsForChapter.length === 0 ? (
+                                            <li className="text-[10px] text-white/40 font-medium py-1">No lessons yet</li>
+                                          ) : (
+                                            lessonsForChapter.map((l, idx) => {
+                                              const isComp = completedLessonsMap.has(String(getId(l)));
+                                              return (
+                                                <li key={getId(l) || `nested-l-${idx}`} className={`text-[11px] font-medium flex items-center gap-2.5 truncate py-1 transition-colors ${isComp ? 'text-white' : 'text-white/40'}`}>
+                                                  <div className={`w-2 h-2 rounded-full shrink-0 ${isComp ? 'bg-primary shadow-[0_0_8px_rgba(255,107,0,0.6)]' : 'bg-[#222]'}`}></div>
+                                                  <span className="truncate">{l.title || l.name || `Lesson ${idx + 1}`}</span>
+                                                </li>
+                                              )
+                                            })
+                                          )}
+                                        </ul>
+                                      </div>
                                     </li>
                                   );
                                 })
@@ -439,135 +420,277 @@ function ContentStructureInner() {
             </div>
           </div>
 
-          <div className="mt-auto p-6 border-t border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full border-2 border-primary/60 bg-primary/10 flex items-center justify-center text-primary font-bold">
-                {learnerName.charAt(0).toUpperCase()}
+          {/* Sticky Profile at Bottom */}
+          <div className="p-6 border-t border-orange-500/20 bg-[#111111] shrink-0 sticky bottom-0 z-30">
+            <Link href="/completeprofile" className="flex items-center gap-3 p-3 -m-3 rounded-2xl hover:bg-white/5 border border-transparent hover:border-orange-500/20 transition-all group">
+              <div className="w-12 h-12 rounded-full border-[3px] border-primary/50 group-hover:border-primary transition-colors bg-primary/10 flex items-center justify-center text-primary font-bold overflow-hidden shrink-0 shadow-[0_0_15px_rgba(255,107,0,0.2)]">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Avatar" width={48} height={48} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                ) : (
+                  <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(firstName || "U")}&background=F97316&color=fff&size=100`} referrerPolicy="no-referrer" alt="Default Avatar" className="w-full h-full object-cover" />
+                )}
               </div>
-              <div>
-                <p className="text-sm font-bold">{learnerName}</p>
-                <p className="text-[10px] text-slate-500">Explorer Level {learnerLevel}</p>
+              <div className="min-w-0 pr-2">
+                <p className="text-sm font-bold truncate group-hover:text-primary transition-colors text-white">{learnerName}</p>
+                <p className="text-[10px] text-primary/70 font-black uppercase tracking-widest mt-0.5">Explorer Lvl {learnerLevel}</p>
               </div>
-            </div>
-            <div className="h-2 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-primary" style={{ width: `${Math.min(100, (totalXP % 500) / 5)}%` }} />
-            </div>
+              <span className="material-symbols-rounded text-white/30 group-hover:text-primary ml-auto transition-colors">chevron_right</span>
+            </Link>
           </div>
         </aside>
 
-        <main className="flex-1 flex flex-col overflow-y-auto">
-          <header className="h-20 border-b border-slate-200 dark:border-slate-800 px-8 flex items-center justify-between bg-white/70 dark:bg-background-dark/20 backdrop-blur-md sticky top-0 z-10">
+        {/* Central Curriculum Container */}
+        <main className="flex-1 flex flex-col h-full overflow-hidden w-full relative">
+          <header className="h-[88px] shrink-0 border-b border-orange-500/20 px-6 md:px-10 flex items-center justify-between bg-[#0a0a0a]/90 backdrop-blur-2xl sticky top-0 z-30 w-full shadow-[0_4px_30px_rgba(255,107,0,0.03)]">
             <div className="flex items-center gap-4 min-w-0">
-              <h2 className="font-display text-lg tracking-wide uppercase truncate">{selectedSubject?.name || "Structure"}</h2>
-              {selectedUnit && (
-                <span className="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded uppercase">
-                  {selectedUnit?.name || "Unit"}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700">
-                <span className="material-symbols-outlined text-primary text-xl">local_fire_department</span>
-                <span className="font-bold text-sm">{streak} Days</span>
+              
+              {/* Back to Dashboard Button */}
+              <button 
+                onClick={() => router.push('/dashboard')} 
+                className="w-10 h-10 rounded-full border border-orange-500/30 flex items-center justify-center hover:bg-orange-500/20 text-primary transition-colors shrink-0 mr-2"
+                title="Back to Dashboard"
+              >
+                <span className="material-symbols-rounded text-xl">arrow_back</span>
+              </button>
+
+              <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20 shrink-0">
+                <span className="material-symbols-rounded text-white text-2xl">auto_stories</span>
               </div>
-              <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700">
-                <span className="material-symbols-outlined text-yellow-500 text-xl">stars</span>
-                <span className="font-bold text-sm">{totalXP.toLocaleString()} XP</span>
+              <div className="flex flex-col">
+                <h2 className="font-display font-black text-2xl tracking-[0.1em] uppercase text-white truncate">
+                  {selectedSubject?.name || "Structure"}
+                </h2>
+                {selectedUnit && (
+                  <p className="text-xs font-bold text-primary tracking-widest uppercase flex items-center gap-1.5 mt-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                    {selectedUnit?.name || "Unit"}
+                  </p>
+                )}
               </div>
             </div>
           </header>
 
-          <div className="p-8 md:p-12 max-w-5xl mx-auto w-full">
-            {error && (
-              <div className="mb-6 rounded-xl border border-red-300/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                {error}
+          <div className="flex flex-1 w-full max-w-[1400px] mx-auto overflow-hidden">
+            
+            {/* Center Track for Lessons */}
+            <div className="flex-1 p-6 sm:p-10 md:p-16 pb-32 border-r border-orange-500/20 overflow-y-auto scroll-smooth relative [&::-webkit-scrollbar]:w-3 [&::-webkit-scrollbar-track]:bg-[#0a0a0a] [&::-webkit-scrollbar-thumb]:bg-[#222] [&::-webkit-scrollbar-thumb]:border-4 [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-[#0a0a0a] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-orange-500/50">
+              {error && (
+                <div className="mb-8 rounded-2xl border border-red-500/40 bg-red-500/10 px-5 py-4 text-sm font-medium text-red-400 flex items-center gap-3">
+                  <span className="material-symbols-rounded">error</span>
+                  {error}
+                </div>
+              )}
+
+              <div className="mb-16 text-center md:text-left relative z-10 bg-[#141414]/80 p-8 md:p-12 rounded-[2.5rem] border border-orange-500/30 shadow-2xl shadow-primary/5 backdrop-blur-xl">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary font-bold text-xs uppercase tracking-widest mb-6 border border-primary/20">
+                  <span className="material-symbols-rounded text-sm">explore</span> Current Path
+                </div>
+                <h1 className="text-4xl md:text-5xl lg:text-7xl font-display font-black mb-6 tracking-tight text-white drop-shadow-sm">
+                  {selectedChapter?.name || "Select Chapter"}
+                </h1>
+                <p className="text-white/70 max-w-2xl leading-relaxed text-base md:text-lg mx-auto md:mx-0 font-medium">
+                  {selectedChapter?.description || "Select a chapter from the left panel to map out your lesson sequence, elevate your skills, and earn XP."}
+                </p>
               </div>
-            )}
 
-            <div className="mb-10">
-              <h1 className="text-3xl md:text-4xl font-display font-bold mb-3">
-                {selectedChapter?.name || "No Chapter Selected"}
-              </h1>
-              <p className="text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">
-                {selectedChapter?.description || "Select a chapter from the left panel to view its lessons."}
-              </p>
-            </div>
+              {lessonsForChapter.length === 0 ? (
+                <div className="rounded-3xl border-2 border-dashed border-orange-500/30 p-16 text-center text-white/50 font-medium">
+                  <div className="w-20 h-20 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-orange-500/20">
+                    <span className="material-symbols-rounded text-4xl text-primary opacity-80">auto_awesome</span>
+                  </div>
+                  Path sequence is currently empty.
+                </div>
+              ) : (
+                <div className="relative flex flex-col items-center py-6 w-full">
+                  
+                  {/* Mathematically precise SVG Track linking lessons */}
+                  {(() => {
+                    const nodeSpacing = 208; // gap-28 (112px) + h-24 (96px)
+                    const testSpacing = 176; // mt-16 (64px) + h-24 half (48px) + h-32 half (64px)
+                    const totalLessons = lessonsForChapter.length;
+                    const hasTest = totalLessons > 0;
+                    const svgHeight = Math.max(1, (totalLessons > 0 ? (totalLessons - 1) * nodeSpacing : 0) + (hasTest ? testSpacing : 0));
 
-            {lessonsForChapter.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center text-sm text-slate-500">
-                No lessons available for this chapter yet.
-              </div>
-            ) : (
-              <div className="relative flex flex-col items-center py-6">
-                <svg
-                  className="absolute top-0 left-1/2 -translate-x-1/2 w-56 h-full pointer-events-none opacity-20 dark:opacity-30"
-                  viewBox="0 0 100 800"
-                  preserveAspectRatio="none"
-                  fill="none"
-                >
-                  <path
-                    d="M50 0 C 80 150, 20 250, 50 400 C 80 550, 20 650, 50 800"
-                    stroke="url(#structureGradient)"
-                    strokeWidth="4"
-                    strokeDasharray="10 10"
-                  />
-                  <defs>
-                    <linearGradient id="structureGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stopColor="#FF6B00" />
-                      <stop offset="100%" stopColor="#FF6B00" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                </svg>
-
-                <div className="flex flex-col gap-20 relative w-full items-center">
-                  {lessonsForChapter.map((lesson, index) => {
-                    const completed = Boolean(lesson?.completedAt || lesson?.isCompleted);
-                    const active = !completed && index === 0;
-                    const sideLeft = index % 2 === 0;
-                    const lessonKey = getEntityKey(lesson, ["title", "name", "order"]);
-                    const lessonTitle = lesson?.title || lesson?.name || `Lesson ${index + 1}`;
-                    const lessonDescription = lesson?.description || "No description";
-                    const moduleLabel = selectedUnit?.name || selectedSubject?.name || "Lesson Module";
-
-                    const lessonHref = `/lesson?lessonId=${encodeURIComponent(lessonKey)}&title=${encodeURIComponent(lessonTitle)}&chapter=${encodeURIComponent(selectedChapter?.name || "Lesson Overview")}&module=${encodeURIComponent(moduleLabel)}&description=${encodeURIComponent(lessonDescription)}`;
+                    let pathD = "M 50 0";
+                    for (let i = 1; i < totalLessons; i++) {
+                      const startY = (i - 1) * nodeSpacing;
+                      const endY = i * nodeSpacing;
+                      const cpX = i % 2 !== 0 ? 120 : -20; 
+                      pathD += " C " + cpX + " " + (startY + nodeSpacing * 0.3) + ", " + cpX + " " + (endY - nodeSpacing * 0.3) + ", 50 " + endY;
+                    }
+                    if (hasTest) {
+                      const startY = totalLessons > 0 ? (totalLessons - 1) * nodeSpacing : 0;
+                      const endY = startY + testSpacing;
+                      const cpX = totalLessons % 2 !== 0 ? 120 : -20;
+                      pathD += " C " + cpX + " " + (startY + testSpacing * 0.3) + ", " + cpX + " " + (endY - testSpacing * 0.3) + ", 50 " + endY;
+                    }
 
                     return (
-                      <button
-                        key={String(getId(lesson) || `${lesson?.title}-${index}`)}
-                        type="button"
-                        onClick={() => router.push(lessonHref)}
-                        className="relative flex flex-col items-center group"
+                      <svg 
+                        className="absolute top-12 left-1/2 -translate-x-1/2 w-48 pointer-events-none z-0 opacity-80" 
+                        style={{ height: `${svgHeight}px`, top: '48px' }} 
+                        viewBox={`0 0 100 ${svgHeight}`} 
+                        fill="none"
                       >
-                        <div
-                          className={`w-20 h-20 rounded-full flex items-center justify-center z-10 transition-transform group-hover:scale-105 cursor-pointer ${
-                            completed
-                              ? "bg-primary text-white"
-                              : active
-                              ? "bg-background-dark border-4 border-primary text-primary animate-pulse"
-                              : "bg-slate-200 dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-600"
+                        <path 
+                          d={pathD} 
+                          stroke="currentColor" 
+                          className="text-orange-500/30" 
+                          strokeWidth="12" 
+                          strokeLinecap="round" 
+                        />
+                      </svg>
+                    );
+                  })()}
+
+                  <div className="flex flex-col gap-28 relative w-full items-center z-10">
+                    {lessonsForChapter.map((lesson, index) => {
+                      const lessonIdStr = String(getId(lesson));
+                      const isCompleted = completedLessonsMap.has(lessonIdStr);
+                      const prevLessonIdStr = index > 0 ? String(getId(lessonsForChapter[index - 1])) : null;
+                      const isPrevCompleted = prevLessonIdStr ? completedLessonsMap.has(prevLessonIdStr) : true;
+                      
+                      const isUnlocked = isAdmin || isCompleted || isPrevCompleted || index === 0;
+                      const active = isUnlocked && !isCompleted;
+                      const sideLeft = index % 2 === 0;
+
+                      const lessonTitle = lesson?.title || lesson?.name || `Lesson ${index + 1}`;
+                      const lessonDescription = lesson?.description || "Embark on this lesson to boost your knowledge.";
+                      const moduleLabel = selectedUnit?.name || selectedSubject?.name || "Learning Module";
+                      const lessonHref = `/lesson/${encodeURIComponent(lessonIdStr)}`;
+
+                      return (
+                        <div key={lessonIdStr || `lesson-${index}`} className="relative flex flex-col items-center group w-full max-w-[500px]">
+                          
+                          <button
+                            type="button"
+                            onClick={() => isUnlocked && router.push(lessonHref)}
+                            disabled={!isUnlocked}
+                            className={`relative flex items-center justify-center z-20 transition-all duration-300 w-24 h-24 rounded-full ${
+                              !isUnlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:-translate-y-2'
+                            } ${
+                              isCompleted 
+                                ? 'bg-primary text-white border-b-[8px] border-orange-700 shadow-[0_10px_20px_rgba(255,107,0,0.5)]' 
+                                : active 
+                                  ? 'bg-white text-primary border-b-[8px] border-primary shadow-[0_15px_30px_rgba(255,107,0,0.6)] border-[3px] border-t-primary border-x-primary animate-pulse' 
+                                  : 'bg-[#1a1a1a] border-b-[8px] border-[#333] text-white/40 shadow-sm'
+                            }`}
+                          >
+                            <span className="material-symbols-rounded text-4xl font-black drop-shadow-sm">
+                              {isCompleted ? "done" : active ? "rocket_launch" : "lock"}
+                            </span>
+                            
+                            {(isCompleted || active) && (
+                              <div className="absolute inset-0 rounded-full border-t-[3px] border-white/30 pointer-events-none"></div>
+                            )}
+                          </button>
+
+                          <div className={`absolute top-1/2 -translate-y-1/2 ${sideLeft ? 'sm:-left-6 md:-left-20 lg:right-1/2 lg:mr-20 text-center lg:text-right' : 'sm:-right-6 md:-right-20 lg:left-1/2 lg:ml-20 text-center lg:text-left'} hidden lg:flex flex-col justify-center px-4 w-64 z-20 pointer-events-none`}>
+                            <h3 className={`font-display font-black text-xl mb-1.5 drop-shadow-md ${active || isCompleted ? 'text-primary' : 'text-white/60'}`}>{lessonTitle}</h3>
+                            <p className="text-xs text-white/50 line-clamp-2 bg-[#111111]/80 backdrop-blur-md rounded-xl p-3 font-medium border border-orange-500/10 shadow-sm">{lessonDescription}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Chapter Test Node */}
+                    {chapterLessonsTotal > 0 && (
+                      <div className="relative flex flex-col items-center group mt-16 w-full max-w-[500px]">
+                        <button
+                          onClick={() => quizUnlocked && quizExists && router.push(`/quiz?quizId=${chapterQuiz.data._id || chapterQuiz.data.id}`)}
+                          disabled={!quizUnlocked || !quizExists}
+                          className={`relative flex items-center justify-center z-20 transition-all duration-300 w-32 h-32 rounded-[2rem] rotate-45 ${
+                            !quizUnlocked || !quizExists ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:scale-105 hover:-translate-y-2'
+                          } ${
+                            quizUnlocked && quizExists 
+                              ? 'bg-gradient-to-tr from-orange-500 via-primary to-orange-400 border-b-[10px] border-r-[10px] border-orange-700 text-white shadow-[0_20px_40px_rgba(255,107,0,0.6)]' 
+                              : 'bg-[#1a1a1a] border-b-[10px] border-r-[10px] border-[#333] text-white/30'
                           }`}
                         >
-                          <span className="material-symbols-outlined text-3xl">
-                            {completed ? "check" : active ? "rocket" : "lock"}
+                          <span className={`material-symbols-rounded text-5xl font-black -rotate-45 drop-shadow-md ${quizUnlocked && quizExists && "animate-pulse"}`}>
+                            {quizUnlocked && quizExists ? "assignment" : "lock"}
                           </span>
+                          {(quizUnlocked && quizExists) && (
+                             <div className="absolute inset-0 rounded-[2rem] border-t-[4px] border-l-[4px] border-white/30 pointer-events-none"></div>
+                          )}
+                        </button>
+                        
+                        <div className="absolute top-[160px] w-full text-center">
+                          <h3 className={`font-display font-black text-2xl mb-2 tracking-wide ${quizUnlocked && quizExists ? 'text-primary drop-shadow-sm' : 'text-white/40'}`}>Chapter Test</h3>
+                          <div className={`text-[10px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-xl inline-block shadow-sm ${quizExists ? (quizUnlocked ? "bg-primary/20 text-primary border border-primary/30" : "bg-[#111] text-white/40 border border-orange-500/10") : "bg-[#111] text-white/40 border border-orange-500/10"}`}>
+                            {quizExists ? (quizUnlocked ? "Prove your mastery" : "Complete lessons to unlock") : "Test Coming Soon"}
+                          </div>
                         </div>
-
-                        <div
-                          className={`${sideLeft ? "-left-64 text-right" : "-right-64 text-left"} absolute top-0 w-56 h-full flex flex-col justify-center`}
-                        >
-                          <h3 className={`font-bold mb-1 ${completed || active ? "text-primary" : "text-slate-400"}`}>
-                            {lessonTitle}
-                          </h3>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
-                            {lessonDescription}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
+                      </div>
+                    )}
+                  </div>
                 </div>
+              )}
+            </div>
+
+            {/* Right Stats Sidebar */}
+            <aside className="hidden xl:flex w-[340px] shrink-0 flex-col border-l border-orange-500/20 bg-[#111111] shadow-xl overflow-y-auto no-scrollbar">
+              <div className="p-8 space-y-8">
+                
+                {/* Chapter Progress Widget Premium */}
+                <div className="bg-[#1a1a1a] p-7 rounded-[2rem] shadow-sm border border-orange-500/30 relative overflow-hidden">
+                  <div className="absolute -right-8 -top-8 w-32 h-32 bg-primary/20 rounded-full blur-3xl"></div>
+                  <h4 className="font-black text-[10px] uppercase tracking-[0.2em] text-white/50 mb-5 flex items-center gap-2">
+                    <span className="material-symbols-rounded text-sm text-primary">trending_up</span> Overall Progress
+                  </h4>
+                  <div className="flex justify-between items-end mb-4">
+                    <span className="text-5xl font-display font-black text-white leading-none">{chapterProgressPct}<span className="text-2xl text-primary">%</span></span>
+                  </div>
+                  <div className="flex justify-between items-center mb-2">
+                     <span className="text-xs font-bold text-white/60">Chapter Content</span>
+                     <span className="text-xs font-black text-primary">{chapterLessonsCompleted} / {chapterLessonsTotal}</span>
+                  </div>
+                  <div className="h-4 w-full bg-[#0a0a0a] rounded-full overflow-hidden border border-orange-500/20 shadow-inner">
+                    <div className="h-full bg-gradient-to-r from-primary to-orange-400 rounded-full shadow-[0_0_15px_rgba(255,107,0,0.8)] transition-all duration-1000 ease-out" style={{ width: `${chapterProgressPct}%` }}></div>
+                  </div>
+                </div>
+
+                {/* Global Stats Matrix */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-[#1a1a1a] p-6 rounded-[2rem] flex flex-col items-center border border-orange-500/20 shadow-sm relative overflow-hidden">
+                    <span className="material-symbols-rounded text-primary text-4xl mb-3 drop-shadow-sm">local_fire_department</span>
+                    <span className="text-3xl font-display font-black text-white mb-1 leading-none">{streak}</span>
+                    <span className="text-[9px] font-black text-white/50 uppercase tracking-[0.2em]">Day Streak</span>
+                  </div>
+                  <div className="bg-[#1a1a1a] p-6 rounded-[2rem] flex flex-col items-center border border-orange-500/20 shadow-sm relative overflow-hidden">
+                    <span className="material-symbols-rounded text-primary text-4xl mb-3 drop-shadow-[0_0_10px_rgba(255,107,0,0.5)]">stars</span>
+                    <span className="text-3xl font-display font-black text-white mb-1 leading-none">{totalXP}</span>
+                    <span className="text-[9px] font-black text-white/50 uppercase tracking-[0.2em]">Total XP</span>
+                  </div>
+                </div>
+
+                <div className="w-full h-px bg-orange-500/20 my-4"></div>
+
+                {/* Quick Navigation Links */}
+                <div className="space-y-4">
+                  <Link href="/analytics" className="w-full p-5 bg-[#1a1a1a] hover:bg-primary text-white transition-all duration-300 rounded-[1.5rem] border border-orange-500/20 flex items-center justify-between group shadow-sm hover:shadow-primary/30 hover:-translate-y-1">
+                    <div className="flex items-center gap-4 font-bold text-sm">
+                      <div className="w-10 h-10 rounded-full bg-[#222] group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                        <span className="material-symbols-rounded text-primary group-hover:text-white transition-colors">monitoring</span>
+                      </div>
+                      <span className="text-white">Review Analytics</span>
+                    </div>
+                    <span className="material-symbols-rounded text-white/30 group-hover:text-white transition-colors -translate-x-2 group-hover:translate-x-0">arrow_forward</span>
+                  </Link>
+
+                  <Link href="/leaderboard" className="w-full p-5 bg-[#1a1a1a] hover:bg-orange-600 text-white transition-all duration-300 rounded-[1.5rem] border border-orange-500/20 flex items-center justify-between group shadow-sm hover:shadow-orange-600/30 hover:-translate-y-1">
+                    <div className="flex items-center gap-4 font-bold text-sm">
+                      <div className="w-10 h-10 rounded-full bg-[#222] group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                        <span className="material-symbols-rounded text-orange-600 group-hover:text-white transition-colors">emoji_events</span>
+                      </div>
+                      <span className="text-white">Leaderboard Hub</span>
+                    </div>
+                    <span className="material-symbols-rounded text-white/30 group-hover:text-white transition-colors -translate-x-2 group-hover:translate-x-0">arrow_forward</span>
+                  </Link>
+                </div>
+
               </div>
-            )}
+            </aside>
           </div>
         </main>
       </div>
@@ -577,7 +700,7 @@ function ContentStructureInner() {
 
 export default function ContentStructure() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" /></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#0a0a0a]"><div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" /></div>}>
       <ContentStructureInner />
     </Suspense>
   );

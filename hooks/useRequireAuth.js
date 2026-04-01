@@ -3,45 +3,54 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { getToken, restoreSession, apiFetch } from "../lib/api";
 
-export function useRequireAuth() {
+export function useRequireAuth(allowedRoles = []) {
   const router = useRouter();
   const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
     const check = async () => {
       let token = getToken();
       if (!token) {
-        // Try to restore from refresh token cookie
         const restored = await restoreSession();
         if (!restored) {
-          router.push("/login");
+          if (!cancelled) router.push("/login");
           return;
         }
       }
 
-      // Fetch user data to verify profile completion
       try {
         const meData = await apiFetch("/v1/me");
-        const profileUser = meData?.data || meData?.user || meData; // Account for generic wrapper
+        const profileUser = meData?.data || meData?.user || meData; 
         
         if (profileUser) {
-          setUser(profileUser);
+          if (!cancelled) setUser(profileUser);
           
-          // Redirect to complete profile if not completed
-          if (!profileUser.profileComplete && pathname !== "/completeprofile") {
-            router.push("/completeprofile");
+          // 1. Role Requirements (Students blocked from admin)
+          if (allowedRoles.length > 0 && !allowedRoles.includes(profileUser.role)) {
+            console.warn(`Unauthorized role: ${profileUser.role}. Required: ${allowedRoles}`);
+            if (!cancelled) router.push("/dashboard");
+            return;
+          }
+
+          // 2. Profile Completion (Only for students)
+          if (profileUser.role === "student" && !profileUser.profileComplete && pathname !== "/completeprofile") {
+            if (!cancelled) router.push("/completeprofile");
+            return;
           }
         }
       } catch (err) {
         console.error("Auth check failed:", err);
+        if (!cancelled) router.push("/login");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      
-      setLoading(false);
     };
     check();
-  }, [router, pathname]);
+    return () => { cancelled = true; };
+  }, [router, pathname, JSON.stringify(allowedRoles)]);
 
   return { user, loading };
 }

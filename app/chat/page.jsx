@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { getToken, apiFetch } from "../../lib/api";
+import { getChatHistory, saveChatHistory, clearChatHistory } from "../../lib/chat-storage";
 
 // ── Suggested prompts ────────────────────────────────────────────────────────────────────────
 const SUGGESTIONS = [
@@ -70,17 +71,16 @@ export default function ChatPage() {
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
 
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      content: "Hello, Space Cadet! 🚀\n\nI'm your AI tutor — ask me anything about your lessons, quiz topics, or request a practice session. I'm here to accelerate your learning orbit!",
-      ts: Date.now(),
-    },
-  ]);
-  const [input, setInput]       = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [rateLimited, setRateLimited] = useState(false);
+
+  // Load history on mount
+  useEffect(() => {
+    setMessages(getChatHistory());
+  }, []);
 
   // Scroll to bottom on new message
   useEffect(() => {
@@ -100,19 +100,24 @@ export default function ChatPage() {
     setInput("");
 
     const userMsg = { role: "user", content: trimmed, ts: Date.now() };
-    setMessages(prev => [...prev, userMsg]);
+    const updatedWithUser = [...messages, userMsg];
+    setMessages(updatedWithUser);
+    saveChatHistory(updatedWithUser);
     setLoading(true);
 
     try {
       const res = await apiFetch(`/v1/ai/chat`, {
         method: "POST",
-        body: { message: trimmed },
+        body: JSON.stringify({ message: trimmed }),
       });
 
       const data = res;
-      const reply = data?.reply ?? data?.message ?? "Mission control received your message!";
+      const replyText = data?.reply ?? data?.message ?? "Mission control received your message!";
+      const assistantMsg = { role: "assistant", content: replyText, ts: Date.now() };
+      const finalized = [...updatedWithUser, assistantMsg];
 
-      setMessages(prev => [...prev, { role: "assistant", content: reply, ts: Date.now() }]);
+      setMessages(finalized);
+      saveChatHistory(finalized);
     } catch (e) {
       if (e.message?.includes("Too many AI requests") || e.message?.includes("429")) {
         setRateLimited(true);
@@ -160,11 +165,11 @@ export default function ChatPage() {
               <div className="w-8 h-8 bg-[#FF6B00] rounded-lg flex items-center justify-center">
                 <span className="material-icons-round text-white text-xl">rocket_launch</span>
               </div>
-              <span className="fdisplay font-bold text-xl tracking-tight">ASTRO<span className="text-[#FF6B00]">LEARN</span></span>
+              <span className="fdisplay font-bold text-xl tracking-tight text-white uppercase tracking-wider">AI<span className="text-[#FF6B00]">BUDDY</span></span>
             </button>
 
             <div className="hidden md:flex items-center gap-8 text-sm">
-              {[["Dashboard","/dashboard"],["Analytics","/analytics"],["Lessons","/structure"],["Leaderboard","/leaderboard"],["AI Tutor","/chat"]].map(([l,h])=>(
+              {[["Dashboard","/dashboard"],["Courses","/subjects"],["Analytics","/analytics"],["Leaderboard","/leaderboard"]].map(([l,h])=>(
                 <a key={l} href={h} className={h==="/chat"?"text-[#FF6B00] font-semibold border-b-2 border-[#FF6B00] pb-0.5":"text-slate-400 hover:text-[#FF6B00] transition-colors"}>{l}</a>
               ))}
             </div>
@@ -179,7 +184,7 @@ export default function ChatPage() {
         </nav>
 
         {/* ── Body ── */}
-        <div className="flex flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 gap-6">
+        <div className="flex flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 gap-6 relative z-10">
 
           {/* ── Sidebar (desktop) ── */}
           <aside className="hidden lg:flex flex-col gap-4 w-64 flex-shrink-0">
@@ -205,7 +210,7 @@ export default function ChatPage() {
             <div className="bg-[#0F0F0F] border border-white/10 rounded-xl p-5">
               <h3 className="fdisplay font-bold text-sm mb-3 flex items-center gap-2">
                 <span className="material-icons-round text-[#FF6B00] text-base">info</span>
-                About AI Tutor
+                About AI Buddy
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed">
                 Your AI tutor is powered by advanced language models. Ask questions, request quizzes, or get topic explanations.
@@ -232,11 +237,14 @@ export default function ChatPage() {
                 🚀
               </div>
               <div>
-                <div className="font-bold fdisplay text-base">ASTRO AI Tutor</div>
+                <div className="font-bold fdisplay text-base uppercase">AI BUDDY</div>
                 <div className="text-xs text-slate-500">Powered by advanced reasoning • Ask anything</div>
               </div>
-              <button
-                onClick={()=>setMessages([{role:"assistant",content:"Conversation reset. What can I help you learn today, Cadet? 🚀",ts:Date.now()}])}
+                <button
+                onClick={() => {
+                  clearChatHistory();
+                  setMessages(getChatHistory());
+                }}
                 className="ml-auto text-slate-600 hover:text-slate-300 transition-colors"
                 title="Clear chat"
               >

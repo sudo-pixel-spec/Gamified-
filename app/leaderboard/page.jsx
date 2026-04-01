@@ -24,19 +24,19 @@ const MILESTONES = [
 
 function pctColor(pct) {
   const p = Math.round(pct * 100);
-  if (p >= 75) return "text-green-400";
-  if (p >= 50) return "text-yellow-400";
-  return "text-red-400";
+  if (p >= 75) return "text-primary";
+  if (p >= 50) return "text-orange-400";
+  return "text-orange-600";
 }
 
 // Generate a deterministic pastel-like colour class from a userId string
 const AVATAR_COLORS = [
-  "bg-blue-500/30 text-blue-300",
-  "bg-purple-500/30 text-purple-300",
-  "bg-emerald-500/30 text-emerald-300",
+  "bg-primary/30 text-orange-300",
+  "bg-orange-500/30 text-orange-400",
   "bg-amber-500/30 text-amber-300",
-  "bg-rose-500/30 text-rose-300",
-  "bg-cyan-500/30 text-cyan-300",
+  "bg-orange-700/30 text-orange-500",
+  "bg-orange-400/30 text-orange-300",
+  "bg-amber-600/30 text-amber-400",
 ];
 function avatarColor(userId) {
   let h = 0;

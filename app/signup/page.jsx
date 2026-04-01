@@ -80,7 +80,13 @@ export default function SignUpPage() {
             if (!res.ok) throw new Error(json?.error?.message ?? "Google sign-up failed");
             const data = json?.data ?? json;
             setToken(data.accessToken);
-            router.push(data.user?.profileComplete ? "/dashboard" : "/completeprofile");
+
+            const user = data.user;
+            if (user?.role === "admin" || user?.role === "super_admin") {
+              router.push("/admin");
+            } else {
+              router.push(user?.profileComplete ? "/dashboard" : "/completeprofile");
+            }
           } catch (err) {
             setError(err instanceof Error ? err.message : "Google sign-up failed");
           } finally {
@@ -155,7 +161,13 @@ export default function SignUpPage() {
       if (!res.ok) throw new Error(json?.error?.message ?? "Invalid OTP");
       const data = json?.data ?? json;
       setToken(data.accessToken);
-      router.push("/completeprofile");
+
+      const user = data.user;
+      if (user?.role === "admin" || user?.role === "super_admin") {
+        router.push("/admin");
+      } else {
+        router.push("/completeprofile");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid OTP");
       setDigits(Array(OTP_LENGTH).fill(""));

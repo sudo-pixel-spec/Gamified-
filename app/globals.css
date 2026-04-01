@@ -42,3 +42,18 @@
   50% { opacity: 1; }
 }
 
+/* ── Global dark scrollbar ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1a1a1a #0a0a0a;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: #0a0a0a; }
+*::-webkit-scrollbar-thumb {
+  background: #222;
+  border-radius: 999px;
+  border: 2px solid #0a0a0a;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(255,107,0,0.4); }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
