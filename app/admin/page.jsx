@@ -67,6 +67,7 @@ const AREAS = [
   { key: "chapters",  label: "Chapters",  icon: "auto_stories", list: listChapters,  create: createChapter,  update: updateChapter,  remove: deleteChapter,  restore: restoreChapter },
   { key: "lessons",   label: "Lessons",   icon: "co_present",   list: listLessons,   create: createLesson,   update: updateLesson,   remove: deleteLesson,   restore: restoreLesson },
   { key: "quizzes",   label: "Quizzes",   icon: "quiz",         restore: restoreQuiz },
+  { key: "users",     label: "Users",     icon: "group" },
 ];
 
 /* ────────────────────────────── helpers ────────────────────────── */
@@ -196,6 +197,10 @@ export default function AdminPage() {
 
   /* ── load area items ── */
   const openArea = useCallback(async (area) => {
+    if (area.key === "users") {
+      router.push("/admin/users");
+      return;
+    }
     if (!area.list) return;
     setActiveArea(area);
     setAreaLoading(true);
@@ -206,7 +211,7 @@ export default function AdminPage() {
     const res = await area.list();
     setItems(extract(res));
     setAreaLoading(false);
-  }, []);
+  }, [router]);
 
   const closeArea = () => {
     setActiveArea(null);

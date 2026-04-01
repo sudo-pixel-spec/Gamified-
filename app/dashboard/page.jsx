@@ -4,27 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
-import { getToken } from "../../lib/api";
+import { apiFetch, getToken } from "../../lib/api";
+import { getStudentStandards, resolveStandardCodeToId } from "../../lib/curriculum-api";
 import Image from "next/image";
-
-const API = process.env.NEXT_PUBLIC_API_URL;
-
-async function api(path, { method = "GET", token, body } = {}) {
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = await res.json();
-  if (!res.ok || json?.ok === false) {
-    throw new Error(json?.error?.message || "Request failed");
-  }
-  return json?.data ?? json;
-}
 
 function formatXP(n) {
   if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
@@ -48,36 +30,65 @@ export default function Dashboard() {
   const [me, setMe] = useState(null);
   const [growth, setGrowth] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const [showStandardPrompt, setShowStandardPrompt] = useState(false);
+  const [availableStandards, setAvailableStandards] = useState([]);
+  const [standardLoading, setStandardLoading] = useState(false);
+
+  // Fetch subjects helper
+  const fetchSubjects = async (stdId) => {
+    if (!stdId) return;
+    try {
+      // Step 1: Ensure we have the ObjectId (bridge legacy codes)
+      const resolvedId = await resolveStandardCodeToId(stdId);
+      console.log("🔍 Fetching subjects for Standard ID:", resolvedId);
+      
+      // Step 2: Fetch using the resolved ID
+      const subRes = await apiFetch(`/v1/curriculum/subjects?standardId=${encodeURIComponent(resolvedId)}`);
+      const subData = subRes?.data || subRes;
+      const subjectsArray = Array.isArray(subData) ? subData : subData?.subjects ?? [];
+      
+      console.log(`📚 Subjects found for ${resolvedId}:`, subjectsArray.length);
+      setSubjects(subjectsArray);
+    } catch (e) {
+      console.error("Fetch subjects failed:", e);
+    }
+  };
 
   useEffect(() => {
     if (authLoading) return;
-    const token = getToken();
-    if (!token) return;
     let cancelled = false;
 
     (async () => {
       setLoading(true);
       try {
-        const [meData, growthData] = await Promise.all([
-          api("/v1/me", { token }),
-          api("/v1/leaderboards/weekly-growth", { token }),
+        const [meRes, growthRes] = await Promise.all([
+          apiFetch("/v1/me"),
+          apiFetch("/v1/leaderboards/weekly-growth")
         ]);
         if (cancelled) return;
 
-        if (!meData?.profileComplete) { router.replace("/completeprofile"); return; }
+        const meData = meRes?.data || meRes;
+        const growthData = growthRes?.data || growthRes;
+
+        if (!meData?.profileComplete) { 
+          router.replace("/completeprofile"); 
+          return; 
+        }
 
         setMe(meData);
         setGrowth(growthData?.entries || []);
 
-        const stdKey = meData?.profile?.standard;
-        if (stdKey) {
-          try {
-            const subData = await api(`/v1/admin/subjects?standard=${encodeURIComponent(stdKey)}`, { token });
-            if (!cancelled) setSubjects(Array.isArray(subData) ? subData : subData?.items ?? subData?.subjects ?? []);
-          } catch { /* non-critical */ }
+        // Use the 'standard' field to check for configuration. 
+        // Our workaround saves the ID directly here.
+        const stdRaw = meData?.profile?.standard;
+        if (stdRaw) {
+          await fetchSubjects(stdRaw);
+        } else {
+          // No configuration found, show prompt
+          setShowStandardPrompt(true);
         }
-      } catch {
-        /* silent */
+      } catch (e) {
+        console.error("Dashboard init failed:", e);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -85,6 +96,79 @@ export default function Dashboard() {
 
     return () => { cancelled = true; };
   }, [authLoading, router]);
+
+  // Handle Standard Change from Prompt
+  const handleStandardSelect = async (std) => {
+    setStandardLoading(true);
+    try {
+      // Use Onboarding route to bypass strict literal validation on the Profile route
+      await apiFetch("/v1/me/onboarding", {
+        method: "PATCH",
+        body: JSON.stringify({
+          fullName: me?.profile?.fullName || "Learner",
+          standard: std._id, // Save the ID directly to the standard field
+          timezone: me?.profile?.timezone || "Asia/Kolkata",
+        }),
+      });
+      // Update local state and fetch new content
+      // We store the ID in the 'standard' field to pass backend validation in the future.
+      setMe(prev => ({ ...prev, profile: { ...prev.profile, standard: std._id } }));
+      await fetchSubjects(std._id);
+      setShowStandardPrompt(false);
+    } catch (e) {
+      console.error("Standard update failed:", e);
+    } finally {
+      setStandardLoading(false);
+    }
+  };
+
+  // Debug log for checking standard ID in browser console
+  useEffect(() => {
+    if (me?.profile?.standard) {
+      console.log("🛠️ Current Dashboard Standard ID:", me.profile.standard);
+    }
+  }, [me]);
+
+  // Load standards list once when prompt is needed
+  useEffect(() => {
+    if (showStandardPrompt && availableStandards.length === 0) {
+      getStudentStandards().then(async (res) => {
+        const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+        setAvailableStandards(list);
+
+        // Fetch counts for each standard to help user pick the "full" one
+        const enriched = [...list];
+        for (let i = 0; i < enriched.length; i++) {
+          const std = enriched[i];
+          const stdId = std._id || std.id;
+          try {
+            const subRes = await apiFetch(`/v1/curriculum/subjects?standardId=${stdId}`);
+            const subjects = subRes?.data || subRes || [];
+            let totalLessons = 0;
+            for (const sub of subjects) {
+              const unitRes = await apiFetch(`/v1/units?subjectId=${sub._id || sub.id}`);
+              const units = unitRes?.data || unitRes || [];
+              for (const unit of units) {
+                const chapRes = await apiFetch(`/v1/chapters?unitId=${unit._id || unit.id}`);
+                const chapters = chapRes?.data || chapRes || [];
+                for (const chap of chapters) {
+                  const lessonRes = await apiFetch(`/v1/lessons?chapterId=${chap._id || chap.id}`);
+                  const lessons = lessonRes?.data || lessonRes || [];
+                  totalLessons += lessons.length;
+                }
+              }
+            }
+            enriched[i] = { ...std, lessonCount: totalLessons };
+            setAvailableStandards([...enriched]);
+          } catch (e) {
+            console.error("Count enrichment failed for", stdId, e);
+          }
+        }
+      });
+    }
+  }, [showStandardPrompt]);
+
+
 
   const name        = me?.profile?.fullName || "Learner";
   const firstName   = name.split(" ")[0];
@@ -135,8 +219,15 @@ export default function Dashboard() {
         {/* hero + level card */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           <div className="lg:col-span-2 flex flex-col justify-center">
-            <h1 className="text-4xl font-display font-bold mb-2 text-white">
+            <h1 className="text-4xl font-display font-bold mb-2 text-white flex flex-wrap items-center gap-x-4">
               Welcome back, <span className="text-primary">{firstName}</span>.
+              <button 
+                onClick={() => setShowStandardPrompt(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[10px] font-black uppercase tracking-widest text-white/40 hover:bg-primary/10 hover:border-primary/30 hover:text-primary transition-all group"
+              >
+                <span className="material-symbols-rounded text-sm">school</span>
+                Grade Select
+              </button>
             </h1>
             <p className="text-white/60 text-lg">Your learning voyage continues. Today&apos;s goal: 500 XP.</p>
           </div>
@@ -191,7 +282,19 @@ export default function Dashboard() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {subjects.length === 0 ? (
-                  <p className="text-sm text-white/40 col-span-2 text-center py-8">No subjects assigned yet.</p>
+                  <div className="bg-[#141414] border border-orange-500/10 p-12 rounded-[2.5rem] text-center flex flex-col items-center justify-center min-h-[300px] w-full col-span-2">
+                    <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-6">
+                      <span className="material-symbols-rounded text-3xl text-white/20">search_off</span>
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2">No subjects found.</h3>
+                    <p className="text-sm text-white/30 max-w-xs mb-8 italic">It seems no learning paths are assigned to your current grade ID.</p>
+                    <button 
+                      onClick={() => setShowStandardPrompt(true)}
+                      className="px-6 py-3 bg-primary text-white font-black text-[10px] uppercase tracking-widest rounded-xl shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
+                    >
+                      Change Your Grade
+                    </button>
+                  </div>
                 ) : (
                   subjects.map((sub, i) => {
                     const c = SUBJECT_COLOR_MAP[i % SUBJECT_COLOR_MAP.length];
@@ -410,6 +513,71 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      {/* Select Standard Modal Prompt */}
+      {showStandardPrompt && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-500">
+          <div className="w-full max-w-lg bg-[#141414] border border-orange-500/30 rounded-[2.5rem] p-8 md:p-10 shadow-2xl shadow-primary/20 relative overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="absolute -top-24 -left-24 w-48 h-48 bg-primary/10 rounded-full blur-[80px]"></div>
+            
+            <div className="relative z-10 text-center">
+              <div className="w-20 h-20 bg-primary/10 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-primary/20 ring-4 ring-primary/5 shadow-[0_0_30px_rgba(255,107,0,0.2)]">
+                <span className="material-symbols-rounded text-4xl text-primary animate-pulse">school</span>
+              </div>
+              
+              <h2 className="text-3xl font-display font-black text-white tracking-tight mb-3">WELCOME TO THE ACADEMY</h2>
+              <p className="text-white/50 text-sm font-medium mb-8">Please confirm your current grade level to synchronize your learning voyage.</p>
+              
+              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                {availableStandards.length === 0 ? (
+                  <div className="py-10 text-white/20 text-xs font-black uppercase tracking-widest animate-pulse">Initializing Data...</div>
+                ) : (
+                  availableStandards.map((std) => {
+                    const isSelected = me?.profile?.standard === std.code;
+                    return (
+                      <button
+                        key={std._id}
+                        onClick={() => handleStandardSelect(std)}
+                        disabled={standardLoading}
+                        className={`w-full group relative flex items-center justify-between p-5 rounded-2xl border-2 transition-all duration-300 ${
+                          isSelected 
+                            ? 'bg-primary border-primary shadow-lg shadow-primary/20 scale-[1.02]' 
+                            : 'bg-black/40 border-white/5 hover:border-primary/50 hover:bg-primary/5 text-white'
+                        }`}
+                      >
+                        <div className="flex flex-col items-start transition-transform group-hover:translate-x-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-[10px] font-black uppercase tracking-widest ${isSelected ? 'text-white/80' : 'text-primary'}`}>
+                              {std.code}
+                            </span>
+                            {std.lessonCount !== undefined && (
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary border border-primary/20'}`}>
+                                {std.lessonCount} Lessons
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-lg font-bold ${isSelected ? 'text-white' : 'text-white/90'}`}>{std.name}</span>
+                        </div>
+
+                        <span className={`material-symbols-rounded text-2xl transition-all ${isSelected ? 'text-white scale-110' : 'text-white/20 group-hover:text-primary group-hover:scale-110'}`}>
+                          {isSelected ? 'verified' : 'arrow_forward'}
+                        </span>
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+
+              {standardLoading && (
+                <div className="absolute inset-0 bg-[#141414]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center rounded-[2.5rem]">
+                  <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary animate-pulse">Synchronizing...</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

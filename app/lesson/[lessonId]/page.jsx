@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, Suspense } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
 import { apiFetch } from "../../../lib/api";
 import { listLessons } from "../../../lib/admin-api";
@@ -66,6 +66,31 @@ function CompletionModal({ show, xp, onNext }) {
 
 // ── Quiz Section ───────────────────────────────────────────────────────────
 
+const SAMPLE_QUIZ = {
+  title: "Demo Quiz",
+  questions: [
+    {
+      qid: "q1",
+      prompt: "What is the primary goal of this lesson?",
+      options: ["Mastering the core concepts", "Just passing time", "Watching videos only", "None of the above"],
+      answerIndex: 0
+    },
+    {
+      qid: "q2",
+      prompt: "How can you earn more XP in this app?",
+      options: ["Completing quizzes", "Staying inactive", "Ignoring lessons", "Deleting the app"],
+      answerIndex: 0
+    },
+    {
+      qid: "q3",
+      prompt: "Is the real backend API for student quizzes coming soon?",
+      options: ["No", "Yes, it's being developed!", "Maybe", "I don't know"],
+      answerIndex: 1
+    }
+  ],
+  difficulty: "hard"
+};
+
 function QuizSection({ lessonId, lessonXP, onComplete }) {
   const [quiz, setQuiz] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -76,17 +101,25 @@ function QuizSection({ lessonId, lessonXP, onComplete }) {
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const [isFallback, setIsFallback] = useState(false);
+
   useEffect(() => {
     (async () => {
       try {
-        // Task 1: Temporarily use admin quiz route
-        // TODO: Replace with dedicated student route once available
+        // As requested: Using the admin route for the quiz.
+        // If 403 occurs, we still catch it to avoid breaking the lesson, but we call the route directly.
         const res = await apiFetch(`/v1/admin/quizzes/latest?lessonId=${lessonId}`);
         if (res?.data) {
           setQuiz(res.data);
+          setIsFallback(false);
         }
       } catch (err) {
-        console.error("Failed to load quiz", err);
+        console.warn("Quiz fetch resulted in error (Admin route restricted?):", err);
+        // Fallback for students (403 Forbidden)
+        if (err.status === 403 || String(err).includes("403")) {
+          setQuiz(SAMPLE_QUIZ);
+          setIsFallback(true);
+        }
       } finally {
         setLoading(false);
       }
@@ -101,10 +134,7 @@ function QuizSection({ lessonId, lessonXP, onComplete }) {
         method: "POST",
         body: JSON.stringify({
           lessonId,
-          score,
           answers,
-          totalQuestions: quiz?.questions?.length || 0,
-          xpEarned: lessonXP,
           idempotencyKey: `quiz_${lessonId}_${Date.now()}`
         })
       });
@@ -126,7 +156,7 @@ function QuizSection({ lessonId, lessonXP, onComplete }) {
 
   const handleNext = () => {
     if (selected === current.answerIndex) setScore(s => s + 1);
-    setAnswers(prev => [...prev, selected]);
+    setAnswers(prev => [...prev, { qid: current.qid, selectedIndex: selected }]);
     
     if (isFinal) {
       setDone(true);
@@ -154,6 +184,12 @@ function QuizSection({ lessonId, lessonXP, onComplete }) {
 
   return (
     <div className="p-8">
+      {isFallback && (
+        <div className="mb-6 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-[10px] text-blue-400 font-bold uppercase tracking-widest flex items-center gap-2">
+          <span className="material-symbols-outlined text-sm">info</span>
+          Demo Mode: Real Quiz API coming soon for students!
+        </div>
+      )}
       <div className="mb-8 flex justify-between items-center">
         <span className="text-xs font-bold text-primary uppercase">Question {currentIdx + 1} of {quiz.questions.length}</span>
         <div className="h-1.5 w-32 bg-white/5 rounded-full overflow-hidden">
@@ -192,6 +228,8 @@ function QuizSection({ lessonId, lessonXP, onComplete }) {
 function LessonPageContent() {
   const router = useRouter();
   const { lessonId } = useParams();
+  const searchParams = useSearchParams();
+  const chapterId = searchParams.get("chapterId");
   const { loading: authLoading } = useRequireAuth();
 
   const [me, setMe] = useState(null);
@@ -204,14 +242,14 @@ function LessonPageContent() {
     if (authLoading) return;
     (async () => {
       try {
-        const [meRes, lessonsRes] = await Promise.allSettled([
+        const [meRes, lessonRes] = await Promise.allSettled([
           apiFetch("/v1/me"),
-          listLessons(), // Using existing listLessons helper
+          apiFetch(`/v1/lessons?chapterId=${encodeURIComponent(chapterId || "")}`), // Using student-safe lessons endpoint
         ]);
         
         if (meRes.status === "fulfilled") setMe(meRes.value?.data || meRes.value);
-        if (lessonsRes.status === "fulfilled") {
-          const lessons = asArray(lessonsRes.value);
+        if (lessonRes.status === "fulfilled") {
+          const lessons = asArray(lessonRes.value);
           const found = lessons.find(l => (l._id || l.id) === lessonId);
           setLesson(found || null);
         }
@@ -224,8 +262,8 @@ function LessonPageContent() {
   const lessonXP = lesson?.xp || 100;
 
   const handleNextAction = () => {
-    // Task 4: Redirect to onboarding if profile is incomplete
-    if (!me?.profile?.completedOnboarding) {
+    // Redirect to onboarding if profile is incomplete
+    if (me && !me.onboardingComplete) {
       router.push("/completeprofile");
     } else {
       router.push("/structure");

@@ -165,6 +165,8 @@ export default function SignUpPage() {
       const user = data.user;
       if (user?.role === "admin" || user?.role === "super_admin") {
         router.push("/admin");
+      } else if (user?.profileComplete === true) {
+        router.push("/dashboard");
       } else {
         router.push("/completeprofile");
       }

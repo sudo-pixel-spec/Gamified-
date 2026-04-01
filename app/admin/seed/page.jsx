@@ -16,135 +16,68 @@ const SEED_TEMPLATE = {
   "standard": {
     "code": "grade_8",
     "name": "Grade 8",
-    "description": "Fun and Easy Data Science for 8th Graders",
+    "active": true,
+    "description": "Comprehensive Data Science Curriculum for 8th Graders",
     "order": 8
   },
   "subject": {
     "name": "Data Science",
-    "description": "Learn how computers use data to do amazing things!",
+    "description": "Master how computers process information in 15 core lessons.",
     "order": 1
   },
   "unit": {
-    "name": "Introduction to Data",
-    "description": "Let's explore what data is and how we visualize it.",
+    "name": "The World of Data",
+    "description": "From basic definitions to advanced AI and Ethics.",
     "order": 1
   },
   "chapters": [
     {
-      "name": "What is Data?",
-      "description": "Let's learn what data means and the different shapes it takes.",
+      "name": "Chapter 1: Foundations of Info",
+      "description": "Understanding the basics of text, numbers, and storage.",
       "order": 1,
       "lessons": [
-        {
-          "title": "Welcome to Data!",
-          "description": "Discover what data is in the simplest way possible.",
-          "videoUrl": "https://youtu.be/i6tet4az1LU",
-          "content": "## What is Data? \n\nData is just a fancy word for **information**. \n\nEvery time you send a text, play a video game, or take a picture with your phone, you are making data! \n\n### Types of Data\n- **Text:** Words, like the messages you type.\n- **Images:** Photos you take.\n- **Video:** TikTok or YouTube clips.\n- **Numbers:** Your math scores or high scores in games.\n- **Sound:** The music you listen to.\n\nComputers store all this info safely so you can use it anytime!",
-          "order": 1,
-          "quiz": {
-            "title": "Quiz: What is Data?",
-            "xpAwarded": 100,
-            "questions": [
-              {
-                "prompt": "What is the simplest way to describe 'data'?",
-                "options": ["Just numbers", "Any kind of information like text or pictures", "A type of computer screen", "Only videos"],
-                "answerIndex": 1
-              },
-              {
-                "prompt": "When you send a text message to your friend, are you creating data?",
-                "options": ["Yes, always!", "No, texting isn't data", "Only if it has a picture", "Only if it is a long message"],
-                "answerIndex": 0
-              }
-            ]
-          }
-        },
-        {
-          "title": "Numbers vs Words",
-          "description": "Learn the basic difference between quantitative and qualitative data.",
-          "videoUrl": "https://youtu.be/wV3berZhy4w",
-          "content": "## Numbers vs Words\n\nSometimes data is numbers, and sometimes it's words. \n\n### Quantitative Data (Numbers)\nThis is data that gives us a **number**. \n- Example: You have **2** apples.\n- Example: Your dog weighs **15** kg.\n*Hint: It sounds like QUANTITY (how many)!*\n\n### Qualitative Data (Words)\nThis is data that gives us a **description** in words.\n- Example: The apple is **red** and **sweet**.\n- Example: Your dog is **fluffy**.\n*Hint: It sounds like QUALITY (what is it like)!*",
-          "order": 2,
-          "quiz": {
-            "title": "Quiz: Numbers vs Words",
-            "xpAwarded": 100,
-            "questions": [
-              {
-                "prompt": "Which of these is Quantitative Data (Numbers)?",
-                "options": ["The car is fast", "The pizza is yummy", "I have 3 cats", "The sky is blue"],
-                "answerIndex": 2
-              },
-              {
-                "prompt": "Which of these is Qualitative Data (Words)?",
-                "options": ["I am 14 years old", "The weather is super sunny", "We drove 10 miles", "My brother ate 4 cookies"],
-                "answerIndex": 1
-              }
-            ]
-          }
-        }
+        { "title": "Welcome to Data", "description": "What is digital information?", "videoUrl": "https://youtu.be/i6tet4az1LU", "content": "Data is information! Everything from texts to photos.", "order": 1, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Is a photo data?", "options": ["Yes", "No"], "answerIndex": 0 }] } },
+        { "title": "Numbers vs Words", "description": "Quant vs Qual.", "videoUrl": "https://youtu.be/wV3berZhy4w", "content": "Quant = Numbers. Qual = Descriptions.", "order": 2, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Which is Quant?", "options": ["3 Cats", "Soft Fur"], "answerIndex": 0 }] } },
+        { "title": "Big Data Intro", "description": "What happens when data is massive?", "videoUrl": "https://youtu.be/BAfHn3v0i_k", "content": "Big Data involves billions of records analyzed by supercomputers.", "order": 3, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Is Big Data small?", "options": ["No", "Yes"], "answerIndex": 0 }] } },
+        { "title": "Data Storage", "description": "Where does information live?", "videoUrl": "https://youtu.be/u88v98aGZsc", "content": "Data lives in Servers, Cloud, and Hard Drives.", "order": 4, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Where is cloud data?", "options": ["On servers", "In actual clouds"], "answerIndex": 0 }] } }
       ]
     },
     {
-      "name": "Drawing the Data",
-      "description": "See how we can turn boring numbers into pretty graphs.",
+      "name": "Chapter 2: Data Visualization",
+      "description": "Turning numbers into beautiful charts.",
       "order": 2,
       "lessons": [
-        {
-          "title": "Making Data Pretty",
-          "description": "Learn why we draw graphs instead of looking at tables.",
-          "videoUrl": "https://youtu.be/JyvE-TUClWI",
-          "content": "## Why Do We Draw Graphs?\n\nImagine staring at a huge list of 1000 numbers. Boring, right? \n\nIf we turn those numbers into a **Graph** or a **Chart**, our brains can understand the information much faster! \n\n### Types of Simple Charts\n- **Bar Chart:** Great for comparing things. (Who likes apples vs bananas?)\n- **Pie Chart:** Great for seeing slices of a whole. (What slice of the class likes pizza?)\n- **Line Chart:** Great for time. (How did my height change from age 5 to 10?)\n\nGraphs make data fun and easy to look at!",
-          "order": 1,
-          "quiz": {
-            "title": "Quiz: Making Data Pretty",
-            "xpAwarded": 100,
-            "questions": [
-              {
-                "prompt": "Why do we use graphs instead of big tables of numbers?",
-                "options": ["Because they are harder to read", "Because they help our brains understand the information fast", "Because computers can't read numbers", "To waste time"],
-                "answerIndex": 1
-              },
-              {
-                "prompt": "Which chart is shaped like a pizza?",
-                "options": ["Bar Chart", "Line Chart", "Pie Chart", "Dot Chart"],
-                "answerIndex": 2
-              }
-            ]
-          }
-        }
+        { "title": "The Power of Charts", "description": "Why visualization matters.", "videoUrl": "https://youtu.be/JyvE-TUClWI", "content": "Visuals help our brains spot patterns faster than tables.", "order": 1, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Do charts help?", "options": ["Yes", "No"], "answerIndex": 0 }] } },
+        { "title": "Bar Charts", "description": "Comparing categories.", "videoUrl": "https://youtu.be/JyvE-TUClWI", "content": "Use bars to see who has more.", "order": 2, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Best for comparisons?", "options": ["Bar Chart", "Dot"], "answerIndex": 0 }] } },
+        { "title": "Pie Charts", "description": "Slices of the whole.", "videoUrl": "https://youtu.be/JyvE-TUClWI", "content": "Slices represent percentages of a total.", "order": 3, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Is it a circle?", "options": ["Yes", "No"], "answerIndex": 0 }] } },
+        { "title": "Line Graphs", "description": "Changes over time.", "videoUrl": "https://youtu.be/JyvE-TUClWI", "content": "Track growth or decline over a period.", "order": 4, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Best for timeline?", "options": ["Line Graph", "Pie Chart"], "answerIndex": 0 }] } }
       ]
     },
     {
-      "name": "Smart Computers (AI)",
-      "description": "How computers learn to think almost like human beings.",
+      "name": "Chapter 3: AI & Intelligence",
+      "description": "How computers learn to think.",
       "order": 3,
       "lessons": [
-        {
-          "title": "What is AI?",
-          "description": "Discover Artificial Intelligence in a really easy way.",
-          "videoUrl": "https://youtu.be/gak8JChIEp4",
-          "content": "## What is Artificial Intelligence (AI)?\n\nAI means **Artificial Intelligence**. \n\nIt is just a way to make computers act really smart! Instead of only doing exactly what we type, an AI can sometimes figure things out on its own.\n\n### Everyday AI Examples\n- **YouTube Recommendations:** AI figures out what videos you like.\n- **Voice Assistants:** Siri or Alexa understands your voice.\n- **Face Unlock:** Your phone's camera recognizes your face to unlock it.\n\nAI isn't magic; it's just computers matching patterns super fast!",
-          "order": 1,
-          "quiz": {
-            "title": "Quiz: What is AI?",
-            "xpAwarded": 100,
-            "questions": [
-              {
-                "prompt": "What does AI stand for?",
-                "options": ["Awesome Internet", "Artificial Intelligence", "Automatic Information", "Any Idea"],
-                "answerIndex": 1
-              },
-              {
-                "prompt": "Which of these uses AI?",
-                "options": ["A wooden pencil", "A regular notebook", "Face unlock on a smartphone", "A plastic ruler"],
-                "answerIndex": 2
-              }
-            ]
-          }
-        }
+        { "title": "What is AI?", "description": "The logic behind smart apps.", "videoUrl": "https://youtu.be/gak8JChIEp4", "content": "AI is machines mimicking human intelligence.", "order": 1, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Can AI learn?", "options": ["Yes", "No"], "answerIndex": 0 }] } },
+        { "title": "Machine Learning", "description": "Training computers with data.", "videoUrl": "https://youtu.be/f_uvGfH_YhY", "content": "Computers find patterns in data to make predictions.", "order": 2, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Does ML need data?", "options": ["Yes", "No"], "answerIndex": 0 }] } },
+        { "title": "Neural Networks", "description": "Brain-like structures in code.", "videoUrl": "https://youtu.be/f_uvGfH_YhY", "content": "Complex layers that process complex data like faces.", "order": 3, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Are they organic?", "options": ["No, they are code", "Yes"], "answerIndex": 0 }] } },
+        { "title": "Future of AI", "description": "Where is AI going?", "videoUrl": "https://youtu.be/f_uvGfH_YhY", "content": "From self-driving cars to space exploration.", "order": 4, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "AI to space?", "options": ["Yes", "No"], "answerIndex": 0 }] } }
+      ]
+    },
+    {
+      "name": "Chapter 4: Privacy & Ethics",
+      "description": "Using data responsibly.",
+      "order": 4,
+      "lessons": [
+        { "title": "Bias & Fairness", "description": "Why data isn't always fair.", "videoUrl": "https://youtu.be/gV0_raJR2ls", "content": "If we train AI on limited data, it might be unfair.", "order": 1, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Can data be unfair?", "options": ["Yes", "No"], "answerIndex": 0 }] } },
+        { "title": "Digital Footprint", "description": "Tracking your history.", "videoUrl": "https://youtu.be/yS7YIDT2oGY", "content": "Every click leaves a trail. Be careful!", "order": 2, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Is it permanent?", "options": ["Mostly yes", "No"], "answerIndex": 0 }] } },
+        { "title": "Cyber Privacy", "description": "Keeping hackers away.", "videoUrl": "https://youtu.be/yS7YIDT2oGY", "content": "Passwords and privacy settings are your best friends.", "order": 3, "quiz": { "xpAwarded": 100, "questions": [{ "prompt": "Share password?", "options": ["Never", "Always"], "answerIndex": 0 }] } }
       ]
     }
   ]
 };
+
+
 
 function extractId(res) {
   return res?.data?._id ?? res?.data?.id ?? res?._id ?? res?.id ?? null;
@@ -152,7 +85,11 @@ function extractId(res) {
 
 async function runSeed(plan, onLog) {
   onLog({ text: `Creating Standard: ${plan.standard.name}…`, status: "running" });
-  const stdRes     = await createStandard({ ...plan.standard, orderIndex: plan.standard.order });
+  const stdRes     = await createStandard({ 
+    ...plan.standard, 
+    orderIndex: plan.standard.order,
+    active: true // Ensure it is visible by default
+  });
   const standardId = extractId(stdRes);
   if (!standardId) throw new Error("Failed to get Standard ID from response");
   onLog({ text: `✓ Standard created (${standardId})`, status: "done" });
@@ -214,6 +151,26 @@ async function runSeed(plan, onLog) {
         }
       }
     }
+  }
+
+  // --- AUTOMATIC PROFILE SYNC ---
+  // We automatically update the current user's profile to use the new standard.
+  // This ensures the developer/admin sees the content on the Dashboard immediately.
+  onLog({ text: `Syncing your profile to the new grade…`, status: "running" });
+  try {
+    const meRes = await apiFetch("/v1/me");
+    const meData = meRes?.data || meRes;
+    await apiFetch("/v1/me/onboarding", {
+      method: "PATCH",
+      body: JSON.stringify({
+        fullName: meData?.profile?.fullName || "Learner",
+        standard: standardId, // Set to the newly created ObjectId
+        timezone: meData?.profile?.timezone || "Asia/Kolkata",
+      }),
+    });
+    onLog({ text: `✓ Profile synced to Standard ID: ${standardId}`, status: "done" });
+  } catch (syncErr) {
+    onLog({ text: `⚠️ Profile sync skipped: ${syncErr.message}`, status: "done" });
   }
 
   onLog({
@@ -334,11 +291,23 @@ export default function SeedPage() {
                   : <><span className="material-symbols-outlined text-[18px]">bolt</span>Run Seeding Pipeline</>
                 }
               </button>
+
+              {seedDone && (
+                <div className="pt-2 animate-in slide-in-from-top-4 duration-500">
+                  <button
+                    onClick={() => router.push("/dashboard")}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-emerald-900/40 flex items-center justify-center gap-3 border border-emerald-400/20 group"
+                  >
+                    <span className="material-symbols-rounded group-hover:translate-x-1 transition-transform">dashboard</span>
+                    GO TO DASHBOARD
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
           {seedLogs.length > 0 && (
-            <div className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl p-4 overflow-y-auto space-y-2 font-mono text-xs shadow-inner">
+            <div className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl p-4 overflow-y-auto space-y-2 font-mono text-xs shadow-inner min-h-[300px]">
               {seedLogs.map((log, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <span className="shrink-0 text-slate-500">[{new Date().toLocaleTimeString().split(' ')[0]}]</span>

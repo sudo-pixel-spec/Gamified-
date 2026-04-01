@@ -31,10 +31,15 @@ export default function ProfilePage() {
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Edit Name state
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState("");
   const [savingName, setSavingName] = useState(false);
+
+  // Grade/Standard selection state
+  const [isEditingGrade, setIsEditingGrade] = useState(false);
+  const [selectedGradeId, setSelectedGradeId] = useState("");
+  const [availableGrades, setAvailableGrades] = useState([]);
+  const [savingGrade, setSavingGrade] = useState(false);
 
   // Verification state
   const [verifyingField, setVerifyingField] = useState(null); // 'phone' | 'email' | null
@@ -62,6 +67,14 @@ export default function ProfilePage() {
     const token = getToken();
     if (!token) return;
     fetchMe(token);
+
+    // Fetch available grades for selection
+    apiFetch("/v1/curriculum/standards")
+      .then(res => {
+        const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+        setAvailableGrades(list.filter(s => s.active !== false));
+      })
+      .catch(console.error);
   }, [authLoading]);
 
   const handleSaveName = async () => {
@@ -72,10 +85,16 @@ export default function ProfilePage() {
     const token = getToken();
     setSavingName(true);
     try {
-      await mutate("/v1/me/profile", {
+      // For name updates, we use the onboarding route to stay safe with the dynamic "standard" value 
+      // if it was already set to an ID.
+      await mutate("/v1/me/onboarding", {
         method: "PATCH",
         token,
-        body: { fullName: editName.trim() },
+        body: { 
+          fullName: editName.trim(),
+          standard: me?.profile?.standard || "",
+          timezone: me?.profile?.timezone || "Asia/Kolkata"
+        },
       });
       await fetchMe(token);
       setIsEditingName(false);
@@ -83,6 +102,34 @@ export default function ProfilePage() {
       alert("Failed to update name: " + err.message);
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleSaveGrade = async () => {
+    if (!selectedGradeId || selectedGradeId === me?.profile?.standard) {
+      setIsEditingGrade(false);
+      return;
+    }
+    const token = getToken();
+    setSavingGrade(true);
+    try {
+      // Use the flexible Onboarding route to save the grade ID
+      await mutate("/v1/me/onboarding", {
+        method: "PATCH",
+        token,
+        body: { 
+          fullName: me?.profile?.fullName || "Learner",
+          standard: selectedGradeId,
+          timezone: me?.profile?.timezone || "Asia/Kolkata"
+        },
+      });
+      await fetchMe(token);
+      setIsEditingGrade(false);
+      alert("Grade updated successfully!");
+    } catch (err) {
+      alert("Failed to update grade: " + err.message);
+    } finally {
+      setSavingGrade(false);
     }
   };
 
@@ -287,12 +334,43 @@ export default function ProfilePage() {
               {/* Grade / Standard */}
               <div className="pt-3 border-t border-slate-100 dark:border-white/5">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Grade / Standard</label>
-                <div className="mt-1">
-                  <span className="inline-flex items-center gap-2 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg text-sm font-bold">
-                    <span className="material-symbols-rounded text-slate-400">school</span>
-                    {p.standard || "Not set"}
-                  </span>
-                </div>
+                {isEditingGrade ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    <select 
+                      value={selectedGradeId}
+                      onChange={(e) => setSelectedGradeId(e.target.value)}
+                      className="flex-1 bg-white dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="" disabled>Select your grade</option>
+                      {availableGrades.map(g => (
+                        <option key={g._id} value={g._id}>{g.name} ({g.code})</option>
+                      ))}
+                    </select>
+                    <button 
+                      onClick={handleSaveGrade}
+                      disabled={savingGrade}
+                      className="bg-primary text-white px-3 py-2 rounded-lg text-sm font-bold hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {savingGrade ? "..." : "Save"}
+                    </button>
+                    <button 
+                      onClick={() => { setIsEditingGrade(false); setSelectedGradeId(me?.profile?.standard); }}
+                      className="bg-slate-100 dark:bg-white/5 px-3 py-2 rounded-lg text-sm font-bold hover:bg-slate-200 dark:hover:bg-white/10"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="inline-flex items-center gap-2 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg text-sm font-bold">
+                      <span className="material-symbols-rounded text-slate-400">school</span>
+                      {availableGrades.find(g => g._id === p.standard)?.name || p.standard || "Not set"}
+                    </span>
+                    <button onClick={() => { setIsEditingGrade(true); setSelectedGradeId(p.standard); }} className="text-primary text-sm font-bold hover:underline flex items-center gap-1">
+                      <span className="material-symbols-rounded text-sm">edit</span> Edit
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Timezone */}

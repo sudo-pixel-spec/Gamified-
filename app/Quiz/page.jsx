@@ -13,6 +13,31 @@ function generateIdempotencyKey(lessonId) {
   return `${lessonId}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+const SAMPLE_QUIZ = {
+  title: "Demo Quiz",
+  questions: [
+    {
+      qid: "q1",
+      prompt: "What is the primary goal of this lesson?",
+      options: ["Mastering the core concepts", "Just passing time", "Watching videos only", "None of the above"],
+      answerIndex: 0
+    },
+    {
+      qid: "q2",
+      prompt: "How can you earn more XP in this app?",
+      options: ["Completing quizzes", "Staying inactive", "Ignoring lessons", "Deleting the app"],
+      answerIndex: 0
+    },
+    {
+      qid: "q3",
+      prompt: "Is the real backend API for student quizzes coming soon?",
+      options: ["No", "Yes, it's being developed!", "Maybe", "I don't know"],
+      answerIndex: 1
+    }
+  ],
+  difficulty: "hard"
+};
+
 // ── ResultScreen ───────────────────────────────────────────────────────────
 
 function ResultScreen({ result, total, onRetry, onBack, onNext }) {
@@ -92,6 +117,7 @@ function QuizPageContent() {
   const [quizDoc,      setQuizDoc]      = useState(null);
   const [loadError,    setLoadError]    = useState("");
   const [loading,      setLoading]      = useState(true);
+  const [isFallback,   setIsFallback]   = useState(false);
 
   const [currentIdx,   setCurrentIdx]   = useState(0);
   const [answers,      setAnswers]       = useState({});       // { qid: selectedIndex }
@@ -124,12 +150,21 @@ function QuizPageContent() {
         if (!cancelled) {
           if (best?.questions?.length) {
             setQuizDoc(best);
+            setIsFallback(false);
           } else {
+            // Check for 403 fallback if no quiz explicitly returned
             setLoadError("No quiz available for this lesson yet.");
           }
         }
-      } catch {
-        if (!cancelled) setLoadError("Could not load quiz. Please try again.");
+      } catch (err) {
+        if (!cancelled) {
+          if (err.status === 403 || String(err).includes("403")) {
+            setQuizDoc(SAMPLE_QUIZ);
+            setIsFallback(true);
+          } else {
+            setLoadError("Could not load quiz. Please try again.");
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -311,9 +346,17 @@ function QuizPageContent() {
 
         {/* quiz title */}
         {quizDoc?.title && (
-          <p className="text-xs font-bold text-primary uppercase tracking-widest">
-            {quizDoc.title}
-          </p>
+          <div className="flex flex-col gap-2">
+            <p className="text-xs font-bold text-primary uppercase tracking-widest">
+              {quizDoc.title}
+            </p>
+            {isFallback && (
+              <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-[10px] text-blue-400 font-bold uppercase tracking-widest flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">info</span>
+                Demo Mode: Real Quiz API coming soon for students!
+              </div>
+            )}
+          </div>
         )}
 
         {/* question card */}

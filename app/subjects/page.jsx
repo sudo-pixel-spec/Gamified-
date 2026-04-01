@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { getToken, apiFetch } from "../../lib/api";
+import { resolveStandardCodeToId } from "../../lib/curriculum-api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -39,13 +40,15 @@ export default function SubjectsPage() {
         const meData = meRes?.data || meRes;
         if (!cancelled) setMe(meData);
         
-        const stdKey = meData?.profile?.standard;
-        if (!stdKey) { setSubjects([]); return; }
+        const stdRaw = meData?.profile?.standardId || meData?.profile?.standard;
+        if (!stdRaw) { setSubjects([]); return; }
 
-        // Using same admin route as dashboard for subjects parity
-        const dataResponse = await apiFetch(`/v1/admin/subjects?standard=${encodeURIComponent(stdKey)}`);
-        const data = dataResponse?.data || dataResponse;
-        const list = Array.isArray(data) ? data : (data?.items ?? data?.subjects ?? []);
+        // Use frontend resolver to handle both IDs and legacy codes
+        const resolvedId = await resolveStandardCodeToId(stdRaw);
+
+        // Using student-facing curriculum route for secure visibility
+        const subData = await apiFetch(`/v1/curriculum/subjects?standardId=${encodeURIComponent(resolvedId)}`);
+        const list = Array.isArray(subData) ? subData : subData?.data ?? subData?.subjects ?? [];
         if (!cancelled) setSubjects(list);
       } catch (e) {
         if (!cancelled) setError(e.message || "Failed to load subjects");

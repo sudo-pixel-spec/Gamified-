@@ -65,7 +65,7 @@ export default function FloatingChatbot() {
   const scrollRef = useRef(null);
 
   // Hidden on admin, login, etc.
-  const isHidden = !pathname || pathname.startsWith("/admin") || pathname === "/login" || pathname === "/otp" || pathname === "/completeprofile";
+  const isHidden = !pathname || pathname.startsWith("/admin") || pathname === "/login" || pathname === "/otp" || pathname === "/completeprofile" || pathname === "/signup";
 
   // Load history on mount
   useEffect(() => {
