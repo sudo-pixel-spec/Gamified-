@@ -1,5 +1,6 @@
-import { Request, Response } from "express";
-import { ok } from "../utils/apiResponse";
+import express, { Request, Response } from "express";
+import mongoose from "mongoose";
+import { ok, fail } from "../utils/apiResponse";
 import { Standard } from "../models/Standard";
 import { Subject } from "../models/Subject";
 import { Unit } from "../models/Unit";
@@ -17,7 +18,21 @@ export async function getSubjects(req: Request, res: Response) {
   const { standardId } = req.query;
   if (!standardId) return res.status(400).json(ok([]));
 
-  const subjects = await Subject.find({ standardId: String(standardId) }).sort({ orderIndex: 1 }).lean();
+  let actualStandardId = String(standardId);
+  console.log(`[DEBUG] getSubjects called with standardId: ${actualStandardId}`);
+
+  if (!/^[0-9a-fA-F]{24}$/.test(actualStandardId)) {
+    const standard = await Standard.findOne({ code: actualStandardId }).lean();
+    if (!standard) {
+      console.log(`[DEBUG] Standard not found for code: ${actualStandardId}`);
+      return res.json(ok([]));
+    }
+    actualStandardId = String(standard._id);
+    console.log(`[DEBUG] Resolved code ${standardId} to ID: ${actualStandardId}`);
+  }
+
+  const subjects = await Subject.find({ standardId: new mongoose.Types.ObjectId(actualStandardId) }).sort({ orderIndex: 1 }).lean();
+  console.log(`[DEBUG] Found ${subjects.length} subjects for standardId: ${actualStandardId}`);
   res.json(ok(subjects));
 }
 
@@ -72,4 +87,11 @@ export async function getLessons(req: AuthRequest, res: Response) {
   });
 
   res.json(ok(result));
+}
+
+export async function getLessonById(req: Request, res: Response) {
+  const { id } = req.params;
+  const lesson = await Lesson.findById(id).lean();
+  if (!lesson) return res.status(404).json(fail("NOT_FOUND", "Lesson not found"));
+  res.json(ok(lesson));
 }
