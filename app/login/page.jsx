@@ -2,9 +2,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useAuth } from "../../context/AuthContext";
 import { setToken } from "../../lib/api";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API = process.env.NEXT_PUBLIC_API_URL || "/api";
 const OTP_LENGTH = 6;
 
 function formatPhoneDisplay(val) {
@@ -15,6 +16,7 @@ function formatPhoneDisplay(val) {
 
 export default function LoginPage() {
   const router = useRouter();
+  const { login: authLogin } = useAuth();
 
   const [step, setStep]             = useState("phone");
   const [phone, setPhone]           = useState("");
@@ -77,12 +79,12 @@ export default function LoginPage() {
               body: JSON.stringify({ credential: response.credential }),
             });
             const json = await res.json();
-            if (!res.ok) throw new Error(json?.error?.message ?? "Google sign-in failed");
+            if (!res.ok) throw new Error(json?.error?.message ?? "Authentication failed. Please check your credentials.");
             const data = json?.data ?? json;
-            setToken(data.accessToken);
+            await authLogin(data.accessToken, data.user);
             
             const user = data.user;
-            if (user?.role === "admin" || user?.role === "super_admin") {
+            if (user?.role === "admin") {
               router.push("/admin");
             } else {
               router.push(user?.profileComplete ? "/dashboard" : "/completeprofile");
@@ -158,12 +160,12 @@ export default function LoginPage() {
         body: JSON.stringify({ phone: phone.replace(/\D/g, ""), otp: otpValue }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json?.error?.message ?? "Invalid OTP");
+      if (!res.ok) throw new Error(json?.error?.message ?? "The code you entered is incorrect. Please try again.");
       const data = json?.data ?? json;
-      setToken(data.accessToken);
+      await authLogin(data.accessToken, data.user);
 
       const user = data.user;
-      if (user?.role === "admin" || user?.role === "super_admin") {
+      if (user?.role === "admin") {
         router.push("/admin");
       } else {
         router.push(user?.profileComplete ? "/dashboard" : "/completeprofile");
@@ -253,7 +255,6 @@ export default function LoginPage() {
         .phone-wrap { display:flex; align-items:stretch; gap:0; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; transition:border-color .2s, box-shadow .2s; }
         .phone-wrap:focus-within { border-color:var(--border-focus); box-shadow:0 0 0 3px rgba(255,92,26,.10); }
         .phone-prefix { display:flex; align-items:center; gap:6px; padding:0 14px; background:rgba(255,255,255,.04); border-right:1px solid var(--border); font-size:15px; color:var(--text-muted); white-space:nowrap; user-select:none; font-family:var(--font-body); }
-        .flag { font-size:18px; line-height:1; }
         .phone-input { flex:1; padding:13px 16px; background:transparent; border:none; color:var(--text); font-family:var(--font-body); font-size:15px; outline:none; letter-spacing:.05em; -webkit-appearance:none; }
         .phone-input::placeholder { color:var(--text-muted); letter-spacing:0; }
         .btn-primary { width:100%; padding:13.5px; background:var(--accent); border:none; border-radius:var(--radius); color:#fff; font-family:var(--font-display); font-size:15px; font-weight:700; cursor:pointer; transition:background .18s,transform .1s,box-shadow .2s; margin-top:20px; box-shadow:0 4px 20px rgba(255,92,26,.25); }
@@ -301,31 +302,38 @@ export default function LoginPage() {
             {error && <div className="error-box" key={error}>{error}</div>}
 
             {step === "phone" ? (
-              <form key="phone-step" className="step-enter" onSubmit={handleRequestOtp}>
-                <label className="field-label" htmlFor="phone-input">Mobile number</label>
-                <div className="phone-wrap">
-                  <div className="phone-prefix">
-                    <span className="flag">🇮🇳</span>
-                    <span>+91</span>
+              <div key="phone-step" className="step-enter">
+                <form onSubmit={handleRequestOtp}>
+                  <label className="field-label" htmlFor="phone-input">Mobile number</label>
+                  <div className="phone-wrap">
+                    <div className="phone-prefix">
+                      <span>🇮🇳</span>
+                      <span>+91</span>
+                    </div>
+                    <input
+                      id="phone-input"
+                      className="phone-input"
+                      type="tel"
+                      inputMode="numeric"
+                      placeholder="98765 43210"
+                      autoComplete="tel-national"
+                      value={formatPhoneDisplay(phone)}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                      required
+                      autoFocus
+                    />
                   </div>
-                  <input
-                    id="phone-input"
-                    className="phone-input"
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="98765 43210"
-                    autoComplete="tel-national"
-                    value={formatPhoneDisplay(phone)}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                    required
-                    autoFocus
-                  />
+                  <button type="submit" className="btn-primary" disabled={loading}>
+                    {loading && <span className="spinner" />}
+                    {loading ? "Sending…" : "Get OTP"}
+                  </button>
+                </form>
+
+                <div className="divider">or continue with email</div>
+                <div className="google-wrap">
+                  <div ref={googleBtnRef} />
                 </div>
-                <button type="submit" className="btn-primary" disabled={loading}>
-                  {loading && <span className="spinner" />}
-                  {loading ? "Sending…" : "Get OTP"}
-                </button>
-              </form>
+              </div>
             ) : (
               <div key="otp-step" className="step-enter">
                 <p className="otp-hint">Code sent to <strong>{maskedPhone.trim()}</strong></p>
@@ -369,9 +377,6 @@ export default function LoginPage() {
                 </button>
               </div>
             )}
-
-            <div className="divider">or continue with email</div>
-            <div className="google-wrap"><div ref={googleBtnRef} /></div>
           </div>
 
           <p className="footer-text">

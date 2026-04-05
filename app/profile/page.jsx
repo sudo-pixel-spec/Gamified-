@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { getToken, apiFetch } from "../../lib/api";
+import { fetchAllStudentStandards } from "../../lib/curriculum-api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -40,6 +41,19 @@ export default function ProfilePage() {
   const [selectedGradeId, setSelectedGradeId] = useState("");
   const [availableGrades, setAvailableGrades] = useState([]);
   const [savingGrade, setSavingGrade] = useState(false);
+  const [isGradeDropdownOpen, setIsGradeDropdownOpen] = useState(false);
+  const [gradeSearchQuery, setGradeSearchQuery] = useState("");
+
+  // Handle outside click for custom dropdowns
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+       if (isGradeDropdownOpen && !event.target.closest('[data-grade-select="true"]')) {
+          setIsGradeDropdownOpen(false);
+       }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isGradeDropdownOpen]);
 
   // Verification state
   const [verifyingField, setVerifyingField] = useState(null); // 'phone' | 'email' | null
@@ -68,11 +82,10 @@ export default function ProfilePage() {
     if (!token) return;
     fetchMe(token);
 
-    // Fetch available grades for selection
-    apiFetch("/v1/curriculum/standards")
-      .then(res => {
-        const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
-        setAvailableGrades(list.filter(s => s.active !== false));
+    // Fetch ALL available grades recursively with zero filtering
+    fetchAllStudentStandards()
+      .then(list => {
+        setAvailableGrades(list || []); 
       })
       .catch(console.error);
   }, [authLoading]);
@@ -246,6 +259,16 @@ export default function ProfilePage() {
                 <span className="material-symbols-rounded">paid</span> {me.wallet?.coins || 0}
               </div>
             </div>
+
+            {/* System Metadata - ID for debugging/targeting */}
+            <div className="mt-8 pt-6 border-t border-dashed border-slate-200 dark:border-white/10 opacity-70">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 block font-display">System Identification</label>
+                <div className="flex items-center gap-2 bg-black/5 dark:bg-black/20 p-3 rounded-xl border border-slate-100 dark:border-white/5">
+                    <span className="material-symbols-rounded text-slate-400 text-sm">fingerprint</span>
+                    <code className="text-[11px] font-mono font-bold text-slate-500 break-all select-all flex-1">{me?._id || me?.id || "N/A"}</code>
+                </div>
+                <p className="text-[9px] font-bold text-slate-400 mt-2 uppercase tracking-tight italic">Use this unique ID in Mission Control for targeted transmissions.</p>
+            </div>
           </div>
         </div>
 
@@ -336,16 +359,63 @@ export default function ProfilePage() {
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Grade / Standard</label>
                 {isEditingGrade ? (
                   <div className="flex items-center gap-2 mt-1">
-                    <select 
-                      value={selectedGradeId}
-                      onChange={(e) => setSelectedGradeId(e.target.value)}
-                      className="flex-1 bg-white dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  <div className="flex-1 relative" data-grade-select="true">
+                    <button 
+                      onClick={() => setIsGradeDropdownOpen(!isGradeDropdownOpen)}
+                      className="w-full bg-white dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-primary"
                     >
-                      <option value="" disabled>Select your grade</option>
-                      {availableGrades.map(g => (
-                        <option key={g._id} value={g._id}>{g.name} ({g.code})</option>
-                      ))}
-                    </select>
+                      <span className="truncate">
+                        {availableGrades.find(g => g._id === selectedGradeId)?.name || "Select your grade"}
+                      </span>
+                      <span className={`material-symbols-rounded transition-transform ${isGradeDropdownOpen ? 'rotate-180 text-primary' : 'text-slate-400'}`}>
+                        expand_more
+                      </span>
+                    </button>
+
+                    {isGradeDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in zoom-in-95 fade-in duration-200">
+                        <div className="p-2 border-b border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-black/20">
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-rounded text-slate-400 text-sm">search</span>
+                            <input 
+                              type="text"
+                              placeholder="Find your grade..."
+                              value={gradeSearchQuery}
+                              onChange={(e) => setGradeSearchQuery(e.target.value)}
+                              className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                              autoFocus
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-60 overflow-y-auto p-1 customize-scrollbar flex flex-col gap-0.5">
+                          {availableGrades
+                            .filter(g => 
+                               (g.name || "").toLowerCase().includes(gradeSearchQuery.toLowerCase()) || 
+                               (g.code || "").toLowerCase().includes(gradeSearchQuery.toLowerCase())
+                            )
+                            .map(g => (
+                              <button 
+                                key={g._id}
+                                onClick={() => { setSelectedGradeId(g._id); setIsGradeDropdownOpen(false); setGradeSearchQuery(''); }}
+                                className={`w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all ${g._id === selectedGradeId ? 'bg-primary text-white' : 'hover:bg-slate-100 dark:hover:bg-white/5 text-slate-600 dark:text-slate-300'}`}
+                              >
+                                <div className="flex justify-between items-center">
+                                  <div className="flex flex-col">
+                                    <span className="text-[9px] opacity-50 font-mono">{g.code}</span>
+                                    <span>{g.name}</span>
+                                  </div>
+                                  {g._id === selectedGradeId && <span className="material-symbols-rounded text-sm">check</span>}
+                                </div>
+                              </button>
+                            ))
+                          }
+                          {availableGrades.length === 0 && (
+                            <p className="text-[10px] text-slate-400 text-center py-4 font-bold uppercase tracking-widest">No Grades Loaded</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                     <button 
                       onClick={handleSaveGrade}
                       disabled={savingGrade}

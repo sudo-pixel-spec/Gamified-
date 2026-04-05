@@ -5,12 +5,27 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { apiFetch, getToken } from "../../lib/api";
-import { getStudentStandards, resolveStandardCodeToId } from "../../lib/curriculum-api";
+import { getStudentStandards, resolveStandardCodeToId, fetchAllStudentStandards } from "../../lib/curriculum-api";
+import { BADGE_DEFINITIONS } from "../../lib/badges";
 import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
+import NotificationBell from "../../components/NotificationBell";
+import EventBanner from "../../components/EventBanner";
 
-function formatXP(n) {
-  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
-  return String(n);
+// ── deterministic colors for avatars ──────────────────────────────────────────
+const AVATAR_COLORS = [
+  "bg-blue-500/30 text-blue-400 border-blue-500/50",
+  "bg-purple-500/30 text-purple-400 border-purple-500/50",
+  "bg-emerald-500/30 text-emerald-400 border-emerald-500/50",
+  "bg-amber-500/30 text-amber-400 border-amber-500/50",
+  "bg-rose-500/30 text-rose-400 border-rose-500/50",
+  "bg-cyan-500/30 text-cyan-400 border-cyan-500/50",
+];
+function getAvatarStyles(userId) {
+  if (!userId) return AVATAR_COLORS[0];
+  let h = 0;
+  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) & 0xffffffff;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
 const SUBJECT_COLOR_MAP = [
@@ -24,15 +39,16 @@ const SUBJECT_COLOR_MAP = [
 
 export default function Dashboard() {
   const router = useRouter();
-  const { loading: authLoading } = useRequireAuth();
-
+  const { user: authUser, loading: authLoading } = useRequireAuth();
   const [loading, setLoading] = useState(true);
-  const [me, setMe] = useState(null);
+  const [me, setMe] = useState(authUser); 
   const [growth, setGrowth] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [showStandardPrompt, setShowStandardPrompt] = useState(false);
   const [availableStandards, setAvailableStandards] = useState([]);
   const [standardLoading, setStandardLoading] = useState(false);
+  const [showStreakModal, setShowStreakModal] = useState(false);
+  const [standardSearchQuery, setStandardSearchQuery] = useState("");
 
   // Fetch subjects helper
   const fetchSubjects = async (stdId) => {
@@ -61,30 +77,38 @@ export default function Dashboard() {
     (async () => {
       setLoading(true);
       try {
-        const [meRes, growthRes] = await Promise.all([
-          apiFetch("/v1/me"),
+        const [growthRes] = await Promise.all([
           apiFetch("/v1/leaderboards/weekly-growth")
         ]);
         if (cancelled) return;
 
-        const meData = meRes?.data || meRes;
         const growthData = growthRes?.data || growthRes;
 
-        if (!meData?.profileComplete) { 
+        if (!authUser?.profileComplete) { 
           router.replace("/completeprofile"); 
           return; 
         }
 
-        setMe(meData);
+        setMe(authUser);
         setGrowth(growthData?.entries || []);
+
+        // Streak Detection for Celebration
+        const lastSeenStreak = parseInt(localStorage.getItem("lastStreak") || "0");
+        const currentStreak  = authUser?.streakCount || 0;
+        if (currentStreak > lastSeenStreak && currentStreak > 0) {
+          setShowStreakModal(true);
+        }
+        localStorage.setItem("lastStreak", currentStreak.toString());
 
         // Use the 'standard' field to check for configuration. 
         // Our workaround saves the ID directly here.
-        const stdRaw = meData?.profile?.standard;
-        if (stdRaw) {
+        const stdRaw = authUser?.profile?.standard;
+        const onboardingDone = authUser?.profileComplete;
+        
+        if (stdRaw && onboardingDone) {
           await fetchSubjects(stdRaw);
         } else {
-          // No configuration found, show prompt
+          // No configuration found or onboarding incomplete, show prompt
           setShowStandardPrompt(true);
         }
       } catch (e) {
@@ -132,12 +156,11 @@ export default function Dashboard() {
   // Load standards list once when prompt is needed
   useEffect(() => {
     if (showStandardPrompt && availableStandards.length === 0) {
-      getStudentStandards().then(async (res) => {
-        const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
-        setAvailableStandards(list);
+      fetchAllStudentStandards().then(async (list) => {
+        setAvailableStandards(list || []);
 
         // Fetch counts for each standard to help user pick the "full" one
-        const enriched = [...list];
+        const enriched = [...(list || [])];
         for (let i = 0; i < enriched.length; i++) {
           const std = enriched[i];
           const stdId = std._id || std.id;
@@ -170,31 +193,40 @@ export default function Dashboard() {
 
 
 
-  const name        = me?.profile?.fullName || "Learner";
+  const name        = authUser?.profile?.fullName || "Learner";
   const firstName   = name.split(" ")[0];
-  const level       = me?.level ?? 1;
-  const totalXP     = me?.totalXP ?? 0;
+  const level       = authUser?.level ?? 1;
+  const totalXP     = authUser?.totalXP ?? 0;
   const xpPerLevel  = 500;
   const xpInLevel   = totalXP % xpPerLevel;
   const xpNeeded    = xpPerLevel - xpInLevel;
   const progressPct = Math.round((xpInLevel / xpPerLevel) * 100);
-  const streak      = me?.streakCount ?? 0;
-  const coins       = me?.wallet?.coins ?? 0;
-  const diamonds    = me?.wallet?.diamonds ?? 0;
+  const streak      = authUser?.streakCount ?? 0;
+  const coins       = authUser?.wallet?.coins ?? 0;
+  const diamonds    = authUser?.wallet?.diamonds ?? 0;
 
   const top3 = useMemo(() => {
+    const myId = me?.id || me?._id;
     return growth.slice(0, 3).map((e, i) => ({
       rank: i + 1,
       name: e.userId,
-      score: e.score,
-      eligibleXP: e.eligibleXP,
-      isYou: me?.id === e.userId,
+      // Priority for display: use eligibleXP if > 0, else fallback to score which drives the rank
+      displayScore: Math.max(e.eligibleXP ?? 0, e.score ?? 0),
+      isYou: myId === e.userId,
     }));
   }, [growth, me]);
 
+  const myEligibleXP = useMemo(() => {
+    const myId = me?.id || me?._id;
+    const entry = growth.find(e => e.userId === myId);
+    if (!entry) return 0;
+    return Math.max(entry.eligibleXP ?? 0, entry.score ?? 0);
+  }, [growth, me]);
+
   const myRank = useMemo(() => {
-    if (!me?.id) return null;
-    const i = growth.findIndex((x) => x.userId === me.id);
+    const myId = me?.id || me?._id;
+    if (!myId) return null;
+    const i = growth.findIndex((x) => x.userId === myId);
     return i >= 0 ? i + 1 : null;
   }, [growth, me]);
 
@@ -208,65 +240,75 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-      {/* background blobs */}
+      {/* background HUD effects */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        {/* Computerized Grid */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,107,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,107,0,0.03)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]"></div>
+        
+        {/* Atmospheric Glows */}
         <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px]"></div>
         <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] bg-orange-900/10 rounded-full blur-[100px]"></div>
+        <div className="absolute top-[20%] left-[10%] w-[300px] h-[300px] bg-blue-500/5 rounded-full blur-[80px]"></div>
       </div>
 
-      <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-32">
+      <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-4 pb-20 overflow-x-hidden">
 
         {/* hero + level card */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           <div className="lg:col-span-2 flex flex-col justify-center">
-            <h1 className="text-4xl font-display font-bold mb-2 text-white flex flex-wrap items-center gap-x-4">
-              Welcome back, <span className="text-primary">{firstName}</span>.
-              <button 
-                onClick={() => setShowStandardPrompt(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[10px] font-black uppercase tracking-widest text-white/40 hover:bg-primary/10 hover:border-primary/30 hover:text-primary transition-all group"
-              >
-                <span className="material-symbols-rounded text-sm">school</span>
-                Grade Select
-              </button>
-            </h1>
-            <p className="text-white/60 text-lg">Your learning voyage continues. Today&apos;s goal: 500 XP.</p>
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
+              <h1 className="text-3xl font-display font-black text-white leading-tight tracking-tight">
+                WELCOME BACK, <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary via-white to-primary animate-shine bg-[length:200%_auto]">{firstName}</span>.
+              </h1>
+            </div>
+            <p className="text-white/60 text-xs italic tracking-wide">Your learning voyage continues. Today&apos;s goal: 500 XP.</p>
           </div>
-          <div className="bg-[#141414] border border-orange-500/20 p-6 rounded-2xl shadow-xl">
-            <div className="flex justify-between items-end mb-4">
+          <div className="glass-card glow-orange p-5 rounded-2xl relative group overflow-hidden border-primary/30 ring-1 ring-white/10">
+            {/* Tactical Corners */}
+            <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-primary/60"></div>
+            <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-primary/60"></div>
+            <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-primary/60"></div>
+            <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-primary/60"></div>
+
+            <div className="flex justify-between items-start mb-3 relative z-10">
               <div>
-                <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Current Status</p>
-                <h3 className="text-xl font-display font-bold text-white">Level {level} <span className="text-white/40 font-normal">/ {level + 1}</span></h3>
+                <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] mb-1">Combat Rating</p>
+                <h3 className="text-xl font-display font-black text-white italic">LVL {level}</h3>
               </div>
-              <p className="text-sm font-bold text-primary">{xpInLevel} / {xpPerLevel} XP</p>
+              <div className="flex flex-col items-end">
+                 <p className="text-sm font-black text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">{totalXP.toLocaleString()} <span className="text-[10px] text-primary">XP</span></p>
+              </div>
             </div>
-            <div className="h-3 w-full bg-[#222] rounded-full overflow-hidden border border-orange-500/10">
-              <div className="h-full bg-gradient-to-r from-primary to-orange-400 rounded-full shadow-[0_0_15px_rgba(255,107,0,0.4)]" style={{ width: `${progressPct}%` }}></div>
+            <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/10 relative">
+              <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.1)_50%,transparent_100%)] animate-scan"></div>
+              <div className="h-full bg-gradient-to-r from-primary via-orange-400 to-primary rounded-full shadow-[0_0_15px_rgba(255,107,0,0.6)] relative z-10" style={{ width: `${progressPct}%` }}></div>
             </div>
-            <p className="text-[10px] text-white/40 mt-4 text-center">{xpNeeded} XP to reach <span className="text-white/70 font-semibold">Level {level + 1}</span></p>
+            <p className="text-[9px] font-bold text-white/30 mt-3 text-center uppercase tracking-widest">Target: {xpNeeded} XP to <span className="text-white/70">Promote</span></p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          <div className="lg:col-span-3 space-y-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <div className="lg:col-span-3 space-y-4">
+            <EventBanner />
 
             {/* quick actions — keep original distinct colors */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Link href="/subjects" className="bg-[#141414] border border-blue-500/20 hover:border-blue-500/50 hover:bg-blue-500/10 p-6 rounded-2xl transition-all duration-200 flex items-center gap-4 group">
-                <div className="w-12 h-12 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_20px_rgba(59,130,246,0.15)]">
-                  <span className="material-symbols-rounded">school</span>
+              <Link href="/subjects" className="glass-card border-blue-500/20 hover:border-blue-500/60 hover:bg-blue-500/5 hover:shadow-[0_0_30px_rgba(59,130,246,0.1)] p-5 rounded-2xl transition-all duration-300 flex items-center gap-4 group">
+                <div className="w-11 h-11 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(59,130,246,0.2)]">
+                  <span className="material-symbols-rounded text-2xl">school</span>
                 </div>
                 <div>
-                  <h3 className="font-display font-bold text-lg text-white">Browse Courses</h3>
-                  <p className="text-xs text-blue-300/70">Explore subjects and lessons</p>
+                  <h3 className="font-display font-black text-sm text-white uppercase tracking-tight">Mission Hub</h3>
+                  <p className="text-[9px] text-blue-300/50 uppercase font-black tracking-[0.2em]">Deploy Now</p>
                 </div>
               </Link>
-              <Link href="/analytics" className="bg-[#141414] border border-emerald-500/20 hover:border-emerald-500/50 hover:bg-emerald-500/10 p-6 rounded-2xl transition-all duration-200 flex items-center gap-4 group">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_20px_rgba(16,185,129,0.15)]">
-                  <span className="material-symbols-rounded">monitoring</span>
+              <Link href="/analytics" className="glass-card border-emerald-500/20 hover:border-emerald-500/60 hover:bg-emerald-500/5 hover:shadow-[0_0_30px_rgba(16,185,129,0.1)] p-5 rounded-2xl transition-all duration-300 flex items-center gap-4 group">
+                <div className="w-11 h-11 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                  <span className="material-symbols-rounded text-2xl">monitoring</span>
                 </div>
                 <div>
-                  <h3 className="font-display font-bold text-lg text-white">View Analytics</h3>
-                  <p className="text-xs text-emerald-300/70">Track your progress stats</p>
+                  <h3 className="font-display font-black text-sm text-white uppercase tracking-tight">Intelligence</h3>
+                  <p className="text-[9px] text-emerald-300/50 uppercase font-black tracking-[0.2em]">Analysis</p>
                 </div>
               </Link>
             </div>
@@ -382,9 +424,13 @@ export default function Dashboard() {
                       </div>
                     ))}
                     {streak > 0 && (
-                      <div className="aspect-square bg-primary/80 rounded flex items-center justify-center border border-primary shadow-[0_0_10px_rgba(255,107,0,0.5)]">
+                      <motion.div 
+                        animate={{ scale: [1, 1.2, 1], rotate: [0, 5, -5, 0] }}
+                        transition={{ repeat: Infinity, duration: 2 }}
+                        className="aspect-square bg-primary/80 rounded flex items-center justify-center border border-primary shadow-[0_0_15px_rgba(255,107,0,0.5)]"
+                      >
                         <span className="material-symbols-rounded text-white text-xs">local_fire_department</span>
-                      </div>
+                      </motion.div>
                     )}
                     {Array.from({ length: Math.max(0, 7 - Math.min(streak, 5) - (streak > 0 ? 1 : 0)) }).map((_, i) => (
                       <div key={`empty-${i}`} className="aspect-square bg-white/5 rounded flex items-center justify-center border border-white/5 text-[10px] text-white/30">
@@ -412,62 +458,93 @@ export default function Dashboard() {
           <div className="space-y-8">
 
             {/* leaderboard */}
-            <div className="bg-[#141414] border border-orange-500/20 p-6 rounded-2xl">
+            <div className="bg-[#141414] border border-orange-500/20 p-6 rounded-2xl relative overflow-hidden">
+               <div className="absolute top-0 right-0 p-3 opacity-20 pointer-events-none">
+                 <span className="material-symbols-rounded text-primary text-4xl">emoji_events</span>
+               </div>
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-display font-bold text-white">Leaderboard</h2>
-                <span className="text-[10px] font-bold text-white/40 uppercase">Weekly Growth</span>
+                <div>
+                  <h2 className="text-lg font-display font-bold text-white">Leaderboard</h2>
+                  <p className="text-[10px] font-bold text-white/40 uppercase tracking-tighter">Weekly Progress</p>
+                </div>
               </div>
               <div className="space-y-4">
-                {top3.map((entry) => (
-                  <div
-                    key={entry.rank}
-                    className={`flex items-center justify-between p-2 rounded-xl ${
-                      entry.isYou ? "bg-primary/10 border border-primary/30" : entry.rank === 1 ? "bg-primary/10 border border-primary/20" : "bg-white/5 border border-white/5"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={`text-sm font-bold w-4 text-center ${entry.rank === 1 || entry.isYou ? "text-primary" : "text-white/40"}`}>
-                        {entry.rank}
-                      </span>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${entry.isYou ? "bg-primary/30 text-primary ring-2 ring-primary/50" : "bg-[#222] text-white/60"}`}>
-                        {entry.isYou ? firstName.charAt(0) : `#${entry.rank}`}
+                {top3.map((entry) => {
+                  const aStyles = getAvatarStyles(entry.name);
+                  
+                  return (
+                    <div
+                      key={entry.rank}
+                      className={`flex items-center justify-between p-3 rounded-xl transition-all ${
+                        entry.isYou ? "bg-primary/20 border border-primary/50 shadow-lg shadow-primary/10" : "bg-white/5 border border-white/5 hover:bg-white/10"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={`text-sm font-bold w-4 text-center ${entry.rank === 1 ? "text-yellow-400" : entry.isYou ? "text-primary" : "text-white/40"}`}>
+                          {entry.rank}
+                        </span>
+                        <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-bold ${aStyles} ${entry.isYou ? 'ring-2 ring-primary/50 ring-offset-2 ring-offset-[#141414]' : ''}`}>
+                          {entry.isYou ? firstName.charAt(0) : entry.name.slice(-2).toUpperCase()}
+                        </div>
+                        <div className="flex flex-col">
+                          <span className={`text-sm font-bold leading-none ${entry.isYou ? "text-primary" : "text-white/80"}`}>
+                            {entry.isYou ? "You" : `Player ${entry.name.slice(-4).toUpperCase()}`}
+                          </span>
+                          <span className="text-[9px] text-white/30 uppercase mt-1">Lvl {level}</span>
+                        </div>
                       </div>
-                      <span className={`text-sm font-bold ${entry.isYou ? "text-primary" : "text-white/80"}`}>
-                        {entry.isYou ? "You" : `Player ${entry.rank}`}
-                      </span>
+                      <div className="text-right">
+                        <span className={`text-sm font-black italic tracking-tighter ${entry.isYou ? "text-primary" : "text-white/70"}`}>
+                          {entry.displayScore.toLocaleString()} XP
+                        </span>
+                      </div>
                     </div>
-                    <span className="text-xs font-bold text-white/40">{formatXP(entry.eligibleXP)} XP</span>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {myRank && myRank > 3 && (
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-primary/10 border border-primary/30">
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-primary/20 border border-primary/50 shadow-lg shadow-primary/10">
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-bold text-primary w-4 text-center">{myRank}</span>
-                      <div className="w-8 h-8 rounded-full bg-primary/30 text-primary flex items-center justify-center text-xs font-bold ring-2 ring-primary/50">
+                      <div className="w-9 h-9 rounded-full border-2 border-primary/50 bg-primary/30 text-primary flex items-center justify-center text-xs font-bold ring-2 ring-primary/30 ring-offset-2 ring-offset-[#141414]">
                         {firstName.charAt(0)}
                       </div>
-                      <span className="text-sm font-bold text-primary">You</span>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-primary leading-none">You</span>
+                        <span className="text-[9px] text-primary/40 uppercase mt-1">Lvl {level}</span>
+                      </div>
                     </div>
-                    <span className="text-xs font-bold text-white/40">{formatXP(totalXP)} XP</span>
+                    <div className="text-right">
+                       <span className="text-sm font-black italic tracking-tighter text-primary">{(myEligibleXP ?? 0).toLocaleString()} XP</span>
+                    </div>
                   </div>
                 )}
               </div>
-              <button onClick={() => router.push("/leaderboard")} className="w-full mt-6 py-3 rounded-xl border border-orange-500/20 text-xs font-bold hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition-colors uppercase tracking-widest text-white/60">
+              <button onClick={() => router.push("/leaderboard")} className="w-full mt-6 py-3 rounded-xl border border-orange-500/20 text-[10px] font-black hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition-all uppercase tracking-[0.2em] text-white/30">
                 Full Rankings
               </button>
             </div>
 
             {/* wallet */}
-            <div className="bg-[#141414] border border-orange-500/20 p-6 rounded-2xl">
-              <h2 className="text-lg font-display font-bold mb-6 text-white">Wallet</h2>
+            <div className="bg-[#141414] border border-orange-500/20 p-6 rounded-2xl relative overflow-hidden group">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-lg font-display font-bold text-white">Wallet</h2>
+                <div className="relative">
+                  <span className="material-symbols-rounded text-primary/20 hover:text-primary text-xl cursor-help peer transition-colors">info</span>
+                  <div className="absolute bottom-full right-0 mb-4 w-52 p-3 bg-[#1a1a1a] border border-orange-500/30 rounded-xl text-[10px] text-white/60 leading-relaxed shadow-2xl opacity-0 translate-y-2 pointer-events-none peer-hover:opacity-100 peer-hover:translate-y-0 transition-all z-20">
+                    <p className="mb-2 uppercase font-black tracking-widest text-primary">How to earn</p>
+                    <p className="mb-2"><span className="text-yellow-400 font-bold">Coins:</span> 1-5 per correct answer.</p>
+                    <p><span className="text-blue-400 font-bold">Diamonds:</span> 1 per Perfect Lesson or Hard Mode.</p>
+                  </div>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col items-center p-3 bg-yellow-500/10 rounded-xl border border-yellow-500/20">
+                <div className="flex flex-col items-center p-3 bg-yellow-500/10 rounded-xl border border-yellow-500/20 group-hover:border-yellow-500/40 transition-colors">
                   <span className="material-symbols-rounded text-yellow-400 text-2xl">paid</span>
                   <span className="text-lg font-bold mt-1 text-white">{coins.toLocaleString()}</span>
                   <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest">Coins</span>
                 </div>
-                <div className="flex flex-col items-center p-3 bg-blue-500/10 rounded-xl border border-blue-500/20">
+                <div className="flex flex-col items-center p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 group-hover:border-blue-500/40 transition-colors">
                   <span className="material-symbols-rounded text-blue-400 text-2xl">diamond</span>
                   <span className="text-lg font-bold mt-1 text-white">{diamonds.toLocaleString()}</span>
                   <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest">Diamonds</span>
@@ -476,31 +553,39 @@ export default function Dashboard() {
             </div>
 
             {/* badges */}
-            <div className="bg-[#141414] border border-orange-500/20 p-6 rounded-2xl">
-              <h2 className="text-lg font-display font-bold mb-6 text-white">Recent Badges</h2>
+            <div className="bg-[#141414] border border-orange-500/20 p-6 rounded-2xl relative">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-lg font-display font-bold text-white">Badges</h2>
+                  <Link href="/badges" className="text-[9px] font-black text-primary hover:underline uppercase tracking-widest block mt-1">View All</Link>
+                </div>
+                <div className="relative">
+                  <span className="material-symbols-rounded text-primary/20 hover:text-primary text-xl cursor-help peer transition-colors">info</span>
+                  <div className="absolute bottom-full right-0 mb-4 w-52 p-3 bg-[#1a1a1a] border border-orange-500/30 rounded-xl text-[10px] text-white/60 leading-relaxed shadow-2xl opacity-0 translate-y-2 pointer-events-none peer-hover:opacity-100 peer-hover:translate-y-0 transition-all z-20">
+                    <p className="mb-2 uppercase font-black tracking-widest text-primary">Achievements</p>
+                    <p>Badges unlock automatically when you reach major streaks or perfect score milestones.</p>
+                  </div>
+                </div>
+              </div>
               <div className="grid grid-cols-3 gap-4">
-                <div className="group relative flex flex-col items-center">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-orange-500 to-yellow-300 p-0.5 shadow-lg shadow-orange-500/30">
-                    <div className="w-full h-full rounded-full bg-[#111] flex items-center justify-center">
-                      <span className="material-symbols-rounded text-orange-400">rocket</span>
+                {(me?.badges || []).slice(0, 3).map((badgeId, idx) => {
+                  const b = BADGE_DEFINITIONS[badgeId] || { name: "Badge", icon: "stars", color: "from-primary to-orange-400" };
+                  return (
+                    <div key={idx} className="group relative flex flex-col items-center">
+                      <div className={`w-12 h-12 rounded-full bg-gradient-to-tr ${b.color} p-0.5 shadow-lg group-hover:scale-110 transition-transform`}>
+                        <div className="w-full h-full rounded-full bg-[#111] flex items-center justify-center">
+                          <span className="material-symbols-rounded text-sm text-white/80">{b.icon}</span>
+                        </div>
+                      </div>
+                      <span className="text-[8px] mt-2 font-bold text-white/40 text-center uppercase leading-tight">{b.name}</span>
                     </div>
+                  );
+                })}
+                {(me?.badges || []).length === 0 && (
+                  <div className="col-span-3 py-6 text-center border border-dashed border-white/5 rounded-xl">
+                    <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">No badges yet</p>
                   </div>
-                  <span className="text-[9px] mt-2 font-bold text-white/40 text-center uppercase leading-tight">First Launch</span>
-                </div>
-                <div className="group relative flex flex-col items-center">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-purple-500 to-pink-300 p-0.5 shadow-lg shadow-purple-500/20">
-                    <div className="w-full h-full rounded-full bg-[#111] flex items-center justify-center">
-                      <span className="material-symbols-rounded text-purple-400">stars</span>
-                    </div>
-                  </div>
-                  <span className="text-[9px] mt-2 font-bold text-white/40 text-center uppercase leading-tight">All Stars</span>
-                </div>
-                <div className="group relative flex flex-col items-center opacity-40 grayscale">
-                  <div className="w-12 h-12 rounded-full border-2 border-dashed border-white/10 flex items-center justify-center">
-                    <span className="material-symbols-rounded text-white/20">lock</span>
-                  </div>
-                  <span className="text-[9px] mt-2 font-bold text-white/40 text-center uppercase leading-tight">???</span>
-                </div>
+                )}
               </div>
             </div>
 
@@ -528,43 +613,66 @@ export default function Dashboard() {
               <h2 className="text-3xl font-display font-black text-white tracking-tight mb-3">WELCOME TO THE ACADEMY</h2>
               <p className="text-white/50 text-sm font-medium mb-8">Please confirm your current grade level to synchronize your learning voyage.</p>
               
+              <div className="relative mb-4">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-rounded text-white/20 text-sm">search</span>
+                <input 
+                  type="text"
+                  placeholder="Find your grade (e.g. VIII, 8)..."
+                  value={standardSearchQuery || ""}
+                  onChange={(e) => setStandardSearchQuery(e.target.value)}
+                  className="w-full bg-white/5 border border-white/5 rounded-2xl pl-12 pr-4 py-3 text-sm text-white outline-none focus:border-primary/50 transition-all"
+                  autoFocus
+                />
+              </div>
+              
               <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                 {availableStandards.length === 0 ? (
                   <div className="py-10 text-white/20 text-xs font-black uppercase tracking-widest animate-pulse">Initializing Data...</div>
                 ) : (
-                  availableStandards.map((std) => {
-                    const isSelected = me?.profile?.standard === std.code;
-                    return (
-                      <button
-                        key={std._id}
-                        onClick={() => handleStandardSelect(std)}
-                        disabled={standardLoading}
-                        className={`w-full group relative flex items-center justify-between p-5 rounded-2xl border-2 transition-all duration-300 ${
-                          isSelected 
-                            ? 'bg-primary border-primary shadow-lg shadow-primary/20 scale-[1.02]' 
-                            : 'bg-black/40 border-white/5 hover:border-primary/50 hover:bg-primary/5 text-white'
-                        }`}
-                      >
-                        <div className="flex flex-col items-start transition-transform group-hover:translate-x-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-[10px] font-black uppercase tracking-widest ${isSelected ? 'text-white/80' : 'text-primary'}`}>
-                              {std.code}
-                            </span>
-                            {std.lessonCount !== undefined && (
-                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary border border-primary/20'}`}>
-                                {std.lessonCount} Lessons
+                  availableStandards
+                    .filter(std => {
+                      const query = (standardSearchQuery || "").toLowerCase();
+                      return (std.name || "").toLowerCase().includes(query) || (std.code || "").toLowerCase().includes(query);
+                    })
+                    .map((std) => {
+                      const isSelected = me?.profile?.standard === std._id || me?.profile?.standard === std.id || me?.profile?.standard === std.code;
+                      return (
+                        <button
+                          key={std._id}
+                          onClick={() => handleStandardSelect(std)}
+                          disabled={standardLoading}
+                          className={`w-full group relative flex items-center justify-between p-5 rounded-2xl border-2 transition-all duration-300 ${
+                            isSelected 
+                              ? 'bg-primary border-primary shadow-lg shadow-primary/20 scale-[1.02]' 
+                              : 'bg-black/40 border-white/5 hover:border-primary/50 hover:bg-primary/5 text-white'
+                          }`}
+                        >
+                          <div className="flex flex-col items-start transition-transform group-hover:translate-x-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-[10px] font-black uppercase tracking-widest ${isSelected ? 'text-white/80' : 'text-primary'}`}>
+                                {std.code}
                               </span>
-                            )}
+                              {std.lessonCount !== undefined && (
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary border border-primary/20'}`}>
+                                  {std.lessonCount} Lessons
+                                </span>
+                              )}
+                            </div>
+                            <span className={`text-lg font-bold ${isSelected ? 'text-white' : 'text-white/90'}`}>{std.name}</span>
                           </div>
-                          <span className={`text-lg font-bold ${isSelected ? 'text-white' : 'text-white/90'}`}>{std.name}</span>
-                        </div>
 
-                        <span className={`material-symbols-rounded text-2xl transition-all ${isSelected ? 'text-white scale-110' : 'text-white/20 group-hover:text-primary group-hover:scale-110'}`}>
-                          {isSelected ? 'verified' : 'arrow_forward'}
-                        </span>
-                      </button>
-                    )
-                  })
+                          <span className={`material-symbols-rounded text-2xl transition-all ${isSelected ? 'text-white scale-110' : 'text-white/20 group-hover:text-primary group-hover:scale-110'}`}>
+                            {isSelected ? 'verified' : 'arrow_forward'}
+                          </span>
+                        </button>
+                      )
+                    })
+                )}
+                {availableStandards.length > 0 && availableStandards.filter(std => {
+                   const query = (standardSearchQuery || "").toLowerCase();
+                   return (std.name || "").toLowerCase().includes(query) || (std.code || "").toLowerCase().includes(query);
+                }).length === 0 && (
+                   <p className="text-[10px] text-white/20 uppercase font-black tracking-widest text-center py-10">No Matches Found</p>
                 )}
               </div>
 
@@ -578,6 +686,55 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Streak Celebration Modal */}
+      <AnimatePresence>
+        {showStreakModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl"
+          >
+            <motion.div 
+              initial={{ scale: 0.8, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.8, y: 20 }}
+              className="bg-[#141414] border border-orange-500/30 rounded-[3rem] p-12 text-center max-w-sm relative overflow-hidden shadow-2xl shadow-primary/20"
+            >
+              <div className="absolute inset-0 bg-primary/5 pointer-events-none" />
+              
+              <div className="relative z-10">
+                <motion.div 
+                  animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
+                  transition={{ repeat: Infinity, duration: 3 }}
+                  className="w-32 h-32 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-8 border border-primary/40 shadow-[0_0_50px_rgba(255,107,0,0.3)]"
+                >
+                  <span className="material-symbols-rounded text-7xl text-primary">local_fire_department</span>
+                </motion.div>
+
+                <h2 className="text-4xl font-display font-black text-white mb-2 italic">STREAK <span className="text-primary">UP!</span></h2>
+                <div className="flex items-center justify-center gap-4 mb-8">
+                   <div className="h-0.5 w-8 bg-white/10" />
+                   <span className="text-5xl font-display font-black text-white">{streak}</span>
+                   <div className="h-0.5 w-8 bg-white/10" />
+                </div>
+                
+                <p className="text-white/50 text-sm mb-10 leading-relaxed font-medium capitalize">
+                  {streak % 7 === 0 ? "Legendary consistency! 1 week down." : "You're building an unstoppable habit. keep going!"}
+                </p>
+
+                <button 
+                  onClick={() => setShowStreakModal(false)}
+                  className="w-full py-4 bg-white text-black font-black text-xs uppercase tracking-widest rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/5"
+                >
+                  Keep The Flame Alive
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

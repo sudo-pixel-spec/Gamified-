@@ -51,6 +51,16 @@ function getRelatedId(item, relationKey) {
   return String(relationField);
 }
 
+function isActualId(id) {
+  if (!id) return false;
+  if (id === "null" || id === "undefined" || id === "[lessonId]") return false;
+  // MongoDB ObjectId is usually 24 hex chars
+  if (typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id)) return true;
+  // If it's something else (like an auto-increment ID or a specific code), 
+  // we check if it's at least not a known placeholder.
+  return id.length > 1;
+}
+
 function getEntityKey(item, fallbackFields = []) {
   const id = getId(item);
   if (id != null) return String(id);
@@ -98,6 +108,8 @@ function ContentStructureInner() {
 
   const requestedSubjectId = searchParams.get("subjectId") || "";
 
+  const isCompleted = searchParams.get("completed") === "1";
+  
   useEffect(() => {
     if (authLoading) return;
     let cancelled = false;
@@ -135,7 +147,7 @@ function ContentStructureInner() {
         const activeSubId = requestedSubjectId || getEntityKey(allSubjects[0], ["code", "name", "title"]);
         setSelectedSubjectId(activeSubId);
 
-        if (activeSubId) {
+        if (isActualId(activeSubId)) {
           // 2. Fetch Units for the subject (Student-safe)
           const unitRes = await apiFetch(`/v1/units?subjectId=${encodeURIComponent(activeSubId)}`);
           const allUnits = asArray(unitRes);
@@ -145,7 +157,7 @@ function ContentStructureInner() {
           const activeUnitId = getEntityKey(allUnits[0], ["code", "name", "title", "order"]);
           setSelectedUnitId(activeUnitId);
 
-          if (activeUnitId) {
+          if (isActualId(activeUnitId)) {
             // 3. Fetch Chapters for the unit (Student-safe)
             const chapterRes = await apiFetch(`/v1/chapters?unitId=${encodeURIComponent(activeUnitId)}`);
             const allChapters = asArray(chapterRes);
@@ -155,7 +167,7 @@ function ContentStructureInner() {
             const activeChapterId = getEntityKey(allChapters[0], ["code", "name", "title", "order"]);
             setSelectedChapterId(activeChapterId);
 
-            if (activeChapterId) {
+            if (isActualId(activeChapterId)) {
               // 4. Fetch Lessons for the chapter (Student-safe)
               // NOTE: This includes backend-calculated "unlocked" and "completed" fields!
               const lessonRes = await apiFetch(`/v1/lessons?chapterId=${encodeURIComponent(activeChapterId)}`);
@@ -171,7 +183,7 @@ function ContentStructureInner() {
     })();
 
     return () => { cancelled = true; };
-  }, [authLoading, requestedSubjectId]);
+  }, [authLoading, requestedSubjectId, isCompleted]);
 
   const visibleSubjects = useMemo(() => {
     const profile = me?.profile ?? {};
@@ -267,6 +279,7 @@ function ContentStructureInner() {
   useEffect(() => {
     const lastLesson = lessonsForChapter[lessonsForChapter.length - 1];
     const lastLessonId = lastLesson ? (lastLesson._id || lastLesson.id) : null;
+
     if (!lastLessonId) {
       setChapterQuiz({ state: "idle", data: null });
       return;
@@ -303,7 +316,8 @@ function ContentStructureInner() {
     const mProg = me?.progress?.completedLessons || [];
     mProg.forEach(id => map.add(String(id)));
     lessons.forEach(l => {
-      if (l.completedAt || l.isCompleted) map.add(String(getId(l)));
+      // Backend returns 'completed' for students in v1/lessons
+      if (l.completedAt || l.isCompleted || l.completed) map.add(String(getId(l)));
     });
     return map;
   }, [dashboardHome, me, lessons]);
@@ -560,7 +574,7 @@ function ContentStructureInner() {
                   {/* Mathematically precise SVG Track linking lessons */}
                   {(() => {
                     const nodeSpacing = 208; // gap-28 (112px) + h-24 (96px)
-                    const testSpacing = 176; // mt-16 (64px) + h-24 half (48px) + h-32 half (64px)
+                    const testSpacing = 288; // gap-28 (112px) + mt-16 (64px) + h-24 half (48px) + h-32 half (64px)
                     const totalLessons = lessonsForChapter.length;
                     const hasTest = totalLessons > 0;
                     const svgHeight = Math.max(1, (totalLessons > 0 ? (totalLessons - 1) * nodeSpacing : 0) + (hasTest ? testSpacing : 0));
@@ -644,11 +658,17 @@ function ContentStructureInner() {
                       );
                     })}
 
-                    {/* Chapter Test Node */}
+                    {/* Chapter Quiz Node */}
                     {chapterLessonsTotal > 0 && (
                       <div className="relative flex flex-col items-center group mt-16 w-full max-w-[500px]">
                         <button
-                          onClick={() => quizUnlocked && quizExists && router.push(`/quiz?quizId=${chapterQuiz.data._id || chapterQuiz.data.id}`)}
+                          onClick={() => {
+                            const lastL = lessonsForChapter[lessonsForChapter.length - 1];
+                            const lastLId = lastL ? (lastL._id || lastL.id) : null;
+                            if (quizUnlocked && quizExists && lastLId) {
+                              router.push(`/quiz?lessonId=${lastLId}&chapterId=${effectiveSelectedChapterId}&source=structure`);
+                            }
+                          }}
                           disabled={!quizUnlocked || !quizExists}
                           className={`relative flex items-center justify-center z-20 transition-all duration-300 w-32 h-32 rounded-[2rem] rotate-45 ${
                             !quizUnlocked || !quizExists ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:scale-105 hover:-translate-y-2'
@@ -667,9 +687,9 @@ function ContentStructureInner() {
                         </button>
                         
                         <div className="absolute top-[160px] w-full text-center">
-                          <h3 className={`font-display font-black text-2xl mb-2 tracking-wide ${quizUnlocked && quizExists ? 'text-primary drop-shadow-sm' : 'text-white/40'}`}>Chapter Test</h3>
+                          <h3 className={`font-display font-black text-2xl mb-2 tracking-wide ${quizUnlocked && quizExists ? 'text-primary drop-shadow-sm' : 'text-white/40'}`}>Chapter Quiz</h3>
                           <div className={`text-[10px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-xl inline-block shadow-sm ${quizExists ? (quizUnlocked ? "bg-primary/20 text-primary border border-primary/30" : "bg-[#111] text-white/40 border border-orange-500/10") : "bg-[#111] text-white/40 border border-orange-500/10"}`}>
-                            {quizExists ? (quizUnlocked ? "Prove your mastery" : "Complete lessons to unlock") : "Test Coming Soon"}
+                            {quizExists ? (quizUnlocked ? "Prove your mastery" : "Complete lessons to unlock") : "Quiz Coming Soon"}
                           </div>
                         </div>
                       </div>

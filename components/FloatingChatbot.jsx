@@ -64,8 +64,8 @@ export default function FloatingChatbot() {
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
 
-  // Hidden on admin, login, etc.
-  const isHidden = !pathname || pathname.startsWith("/admin") || pathname === "/login" || pathname === "/otp" || pathname === "/completeprofile" || pathname === "/signup";
+  // Restrict floating buddy to lesson pages only as per design preference
+  const isHidden = !pathname?.startsWith("/lesson/");
 
   // Load history on mount
   useEffect(() => {
@@ -83,6 +83,10 @@ export default function FloatingChatbot() {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
 
+    // Detect lessonId from URL if on a lesson page (extracted safely)
+    const rawId = pathname?.startsWith("/lesson/") ? pathname.split("/")[2]?.split("?")[0] : null;
+    const lessonIdFromUrl = (rawId && /^[0-9a-fA-F]{24}$/.test(rawId)) ? rawId : null;
+
     setError(null);
     setInput("");
 
@@ -93,22 +97,30 @@ export default function FloatingChatbot() {
     setLoading(true);
 
     try {
-      // Using existing chat page logic: POST /v1/ai/chat with { message: text }
+      // Pass lessonId for context if available
       const res = await apiFetch(`/v1/ai/chat`, {
         method: "POST",
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({ 
+          message: trimmed,
+          lessonId: lessonIdFromUrl 
+        }),
       });
 
-      const replyText = res?.reply ?? res?.message ?? res?.data?.reply ?? "Signal received! (TODO: Real AI stream coming soon)";
+      const data = res?.data ?? res;
+      const replyText = data?.reply ?? data?.message ?? "Mission control received your message!";
       const assistantMsg = { role: "assistant", content: replyText, ts: Date.now() };
       const finalized = [...updatedWithUser, assistantMsg];
       setMessages(finalized);
       saveChatHistory(finalized);
     } catch (e) {
+      // Handle rate limits or other specific backend errors
       if (e.message?.includes("429")) {
         setError("Daily AI limit reached, Cadet! 🌙");
+      } else if (e.message?.includes("403")) {
+        setError("Mission locked: Please complete your profile first!");
       } else {
-        setError("Signal lost. (TODO: Check AI route)");
+        // Show the actual error message for easier debugging
+        setError(e.message || "Signal lost. (Check AI route)");
       }
     } finally {
       setLoading(false);

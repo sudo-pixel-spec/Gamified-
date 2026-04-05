@@ -28,11 +28,33 @@ export function useRequireAuth(allowedRoles = []) {
         if (profileUser) {
           if (!cancelled) setUser(profileUser);
           
-          // 1. Role Requirements (Students blocked from admin)
-          if (allowedRoles.length > 0 && !allowedRoles.includes(profileUser.role)) {
-            console.warn(`Unauthorized role: ${profileUser.role}. Required: ${allowedRoles}`);
-            if (!cancelled) router.push("/dashboard");
-            return;
+          // 1. Role Requirements
+          const role = profileUser.role;
+          const type = profileUser.adminType;
+          
+          // Comprehensive "Super Admin" check:
+          // Rule: Role must be "admin" AND (Type is "super" OR Type is Missing entirely)
+          const isSuper = role === "admin" && (type === "super" || !type);
+
+          if (allowedRoles.length > 0) {
+            // Check if user has one of the allowed roles
+            const hasRole = allowedRoles.includes(role);
+            
+            // Check if super access was required but user is NOT super
+            const superRequired = allowedRoles.includes("super");
+            
+            if (!hasRole && !(superRequired && isSuper)) {
+              console.warn(`Unauthorized: role=${role}, type=${type}. Allowed: ${allowedRoles}`);
+              if (!cancelled) router.push("/dashboard");
+              return;
+            }
+
+            // Explicitly block regular admins from pages requiring "super"
+            if (superRequired && !isSuper) {
+              console.warn(`Super Admin required for this page.`);
+              if (!cancelled) router.push("/dashboard");
+              return;
+            }
           }
 
           // 2. Profile Completion (Only for students)

@@ -300,7 +300,17 @@ export default function AdminLessonEditorPage({ params }) {
             <p className="text-xs text-slate-500 line-clamp-1">{lesson.title}</p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+            <button 
+                onClick={() => router.push("/admin/explorer")}
+                className="p-2 rounded-xl border border-slate-200 dark:border-white/10 hover:border-primary transition-all text-slate-400 hover:text-primary shadow-sm"
+                title="Curriculum Explorer"
+            >
+                <span className="material-symbols-outlined">account_tree</span>
+            </button>
+        </div>
       </header>
+
 
       <main className="max-w-4xl mx-auto p-4 md:p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         

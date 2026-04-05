@@ -4,52 +4,47 @@ import { useEffect, useState, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { getToken } from "../lib/api";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "";
-
-async function api(path, { method = "GET", token, body } = {}) {
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = await res.json();
-  if (!res.ok || json?.ok === false) {
-    throw new Error(json?.error?.message || "Request failed");
-  }
-  return json?.data ?? json;
-}
+import { apiFetch } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 
 export default function GlobalNav({ children }) {
   const pathname = usePathname();
   const router = useRouter();
-  
-  const [me, setMe] = useState(null);
+  const { user: me, loading: authLoading, logout } = useAuth();
+
+  const [unreadCount, setUnreadCount] = useState(0);
   const [isDrawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef(null);
 
-  // Student routes that should have the global navigation
-  const isStudentRoute = pathname && pathname === "/dashboard";
+  const isHomeRoute = pathname === "/dashboard" || pathname === "/subjects" || pathname === "/analytics" || pathname === "/leaderboard";
+  // The global nav should be active for all these core student-facing pages
+  const isStudentRoute = isHomeRoute;
 
+  // Data Fetching (Stats & Unread Count) - Using centralized user profile
   useEffect(() => {
-    if (!isStudentRoute) return;
-    const token = getToken();
-    if (!token) return;
+    if (!isStudentRoute || !me) return;
     
     let cancelled = false;
-    api("/v1/me", { token })
-      .then(data => {
-        if (!cancelled) setMe(data);
-      })
-      .catch(err => console.error("Failed to fetch user in nav:", err));
 
-    return () => { cancelled = true; };
-  }, [isStudentRoute, pathname]); // Re-fetch occasionally or at least on mount
+    const fetchUnread = async () => {
+      try {
+        const data = await apiFetch("/v1/notifications/unread-count");
+        if (cancelled) return;
+        const val = typeof data === 'number' ? data : (data?.count ?? data?.unreadCount ?? data?.data?.count ?? data?.data ?? 0);
+        setUnreadCount(Number(val) || 0); 
+      } catch (err) {
+        if (!cancelled) setUnreadCount(0);
+      }
+    };
+
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000); // 30s poll
+
+    return () => { 
+      cancelled = true; 
+      clearInterval(interval);
+    };
+  }, [pathname, isStudentRoute, me]);
 
   // handle ESC to close drawer
   useEffect(() => {
@@ -79,185 +74,202 @@ export default function GlobalNav({ children }) {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("accessToken");
+    logout();
     router.push("/login");
   };
 
+  // If not a student route, render children without nav shell
   if (!isStudentRoute) {
     return <>{children}</>;
+  }
+
+  // Loading state for the shell
+  if (authLoading && !me) {
+      return (
+          <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+      );
   }
 
   const name = me?.profile?.fullName || "Learner";
   const firstName = name.split(" ")[0];
   const totalXP = me?.totalXP ?? 0;
   const streak = me?.streakCount ?? 0;
-  const level = me?.level ?? 1;
   const avatarUrl = me?.profile?.avatarUrl;
 
   return (
     <div className="min-h-screen relative flex flex-col bg-background-light dark:bg-background-dark text-slate-text dark:text-slate-text-dark">
-      {/* ── Top Header ── */}
-      <nav className="sticky top-0 z-40 bg-white/80 dark:bg-background-dark/80 backdrop-blur-lg border-b border-slate-200 dark:border-white/5">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-8">
-              <Link href="/dashboard" className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center">
-                  <div className="relative w-10 h-10">
-                    <Image
-                      src="/images/logo.png"
-                      alt="Gamified Logo"
-                      fill
-                      sizes="40px"
-                      priority
-                      className="object-contain"
-                    />
-                  </div>
-                </div>
-                <span className="text-xl font-display font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent-orange hidden sm:block">GAMIFIED</span>
-              </Link>
-              <div className="hidden md:flex items-center gap-6">
-                  <Link href="/dashboard" className={`text-sm font-medium transition-colors ${pathname === "/dashboard" ? "text-primary" : "text-slate-500 hover:text-primary"}`}>Dashboard</Link>
-                  <Link href="/subjects" className={`text-sm font-medium transition-colors ${pathname.includes("/subjects") ? "text-primary" : "text-slate-500 hover:text-primary"}`}>Courses</Link>
-                  <Link href="/analytics" className={`text-sm font-medium transition-colors ${pathname.includes("/analytics") ? "text-primary" : "text-slate-500 hover:text-primary"}`}>Analytics</Link>
-                  <Link href="/chat" className={`text-sm font-medium transition-colors ${pathname.includes("/chat") ? "text-primary" : "text-slate-400 hover:text-primary"}`}>AI Buddy</Link>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Link href="/analytics" className="hidden sm:flex items-center gap-2 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 transition-colors">
-                <span className="material-symbols-rounded text-yellow-400 text-lg">bolt</span>
-                <span className="text-xs font-bold font-display uppercase tracking-wider">{totalXP.toLocaleString()} XP</span>
-              </Link>
-              <Link href="/analytics" className="flex items-center gap-2 bg-orange-50 dark:bg-primary/10 px-3 py-1.5 rounded-full border border-primary/20 hover:bg-orange-100 dark:hover:bg-primary/20 transition-colors">
-                <span className="material-symbols-rounded text-primary text-lg">local_fire_department</span>
-                <span className="text-xs font-bold text-primary font-display">{streak} DAY</span>
-              </Link>
-              <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-white/10">
-                <Link href="/profile" className="block w-9 h-9 rounded-full ring-2 ring-primary/30 p-0.5 hover:ring-primary/60 transition-all cursor-pointer">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="Avatar" width={36} height={36} loading="eager" fetchPriority="high" referrerPolicy="no-referrer" className="w-full h-full rounded-full object-cover" />
-                  ) : (
-                    <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(firstName || "U")}&background=F97316&color=fff&size=128`} alt="Default Avatar" width={36} height={36} loading="eager" fetchPriority="high" referrerPolicy="no-referrer" className="w-full h-full rounded-full object-cover bg-primary/10" />
-                  )}
+      {/* ── Classic Sticky Header (Dashboard Only) ── */}
+      <nav className="sticky top-0 z-40 bg-white dark:bg-background-dark border-b border-slate-200 dark:border-white/10 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+           <div className="flex justify-between items-center h-16">
+              <div className="flex items-center gap-8">
+                <Link href="/dashboard" className="flex items-center gap-2">
+                   <div className="relative w-8 h-8">
+                      <Image src="/images/logo.png" alt="Logo" fill sizes="32px" priority className="object-contain" />
+                   </div>
+                   <span className="text-xl font-display font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent-orange">GAMIFIED</span>
                 </Link>
-                <button 
-                  onClick={() => setDrawerOpen(true)}
-                  className="text-slate-400 hover:text-primary transition-colors flex items-center p-1"
-                >
-                  <span className="material-symbols-rounded text-2xl">menu</span>
-                </button>
+                
+                <div className="hidden md:flex items-center gap-6">
+                   <Link href="/dashboard" className="text-sm font-medium text-primary hover:text-primary transition-colors">Dashboard</Link>
+                   <Link href="/subjects" className="text-sm font-medium text-slate-500 hover:text-primary transition-colors">Courses</Link>
+                   <Link href="/analytics" className="text-sm font-medium text-slate-500 hover:text-primary transition-colors">Analytics</Link>
+                   <Link href="/chat" className="text-sm font-medium text-slate-500 hover:text-primary transition-colors">AI Buddy</Link>
+                </div>
               </div>
-            </div>
-          </div>
+
+              <div className="flex items-center gap-4">
+                 <div className="hidden sm:flex items-center gap-4 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/10">
+                    <div className="flex items-center gap-2 pr-3 border-r border-slate-200 dark:border-white/10">
+                       <span className="material-symbols-rounded text-primary text-lg">local_fire_department</span>
+                       <span className="text-xs font-bold text-primary">{streak}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                       <span className="material-symbols-rounded text-yellow-400 text-lg">bolt</span>
+                       <span className="text-xs font-bold font-display uppercase tracking-wider">{totalXP.toLocaleString()} XP</span>
+                    </div>
+                 </div>
+
+                 <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-white/10">
+                    {/* PERSISTENT NOTIFICATION BELL */}
+                    <Link href="/notifications" className="relative p-2 text-slate-400 hover:text-primary transition-all">
+                        <span className="material-symbols-rounded text-2xl">notifications</span>
+                        {unreadCount > 0 && (
+                           <span className="absolute top-1 right-1 flex h-4 w-4 bg-rose-500 rounded-full items-center justify-center text-[10px] font-black text-white ring-2 ring-white dark:ring-background-dark animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.6)]">
+                              {unreadCount}
+                           </span>
+                        )}
+                    </Link>
+
+                    <Link href="/profile" className="w-9 h-9 rounded-full ring-2 ring-primary/30 p-0.5 hover:ring-primary/60 transition-all overflow-hidden">
+                       {avatarUrl ? (
+                          <img src={avatarUrl} alt="Avatar" className="w-full h-full rounded-full object-cover" />
+                       ) : (
+                          <div className="w-full h-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold uppercase">{firstName[0]}</div>
+                       )}
+                    </Link>
+                    <button onClick={() => setDrawerOpen(true)} className="text-slate-400 hover:text-primary transition-colors">
+                       <span className="material-symbols-rounded text-2xl">menu</span>
+                    </button>
+                 </div>
+              </div>
+           </div>
         </div>
       </nav>
 
       {/* ── Main Content Area ── */}
-      {/* pb-24 padding so content isn't covered by the bottom nav only when on dashboard */}
-      <main className={`flex-1 ${pathname === "/dashboard" ? "pb-24" : ""}`}>
+      <main className="flex-1 pb-24">
         {children}
       </main>
 
-      {/* ── Bottom Navigation Bar ── */}
-      {isStudentRoute && (
+      {/* ── Bottom Navigation Bar (Dashboard Only) ── */}
+      {isHomeRoute && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-background-dark border-t border-slate-200 dark:border-white/10 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.2)]">
-        <div className="w-full max-w-7xl mx-auto px-6 sm:px-12 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] flex justify-between items-center gap-2 sm:gap-4">
-          <Link href="/dashboard" className={`flex flex-col items-center shrink-0 gap-1 transition-colors ${pathname.includes("/dashboard") ? "text-primary" : "text-slate-400 hover:text-primary"}`}>
-            <span className="material-symbols-rounded text-[24px]">grid_view</span>
-            <span className="text-[10px] font-bold">Home</span>
-          </Link>
-          <Link href="/subjects" className={`flex flex-col items-center gap-1 transition-colors ${pathname.includes("/school") || pathname.includes("/subjects") ? "text-primary" : "text-slate-400 hover:text-primary"}`}>
-            <span className="material-symbols-rounded text-[24px]">school</span>
-            <span className="text-[10px] font-bold">Learn</span>
-          </Link>
-          
-          <div className="relative -top-5">
-            <button 
-              onClick={handlePlay} 
-              className="bg-primary w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-primary/40 hover:scale-105 transition-transform border-4 border-white dark:border-card-dark"
-            >
-              <span className="material-symbols-rounded text-white text-3xl ml-1">play_arrow</span>
-            </button>
-            <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-primary">Play</span>
-          </div>
+          <div className="w-full max-w-7xl mx-auto px-6 sm:px-12 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] flex justify-between items-center gap-2 sm:gap-4">
+            <Link href="/dashboard" className={`flex flex-col items-center shrink-0 gap-1 transition-colors ${pathname === "/dashboard" ? "text-primary" : "text-slate-400 hover:text-primary"}`}>
+              <span className="material-symbols-rounded text-[24px]">grid_view</span>
+              <span className="text-[10px] font-bold">Home</span>
+            </Link>
+            <Link href="/subjects" className={`flex flex-col items-center gap-1 transition-colors ${pathname.includes("/subjects") ? "text-primary" : "text-slate-400 hover:text-primary"}`}>
+              <span className="material-symbols-rounded text-[24px]">map</span>
+              <span className="text-[10px] font-bold">Learn</span>
+            </Link>
 
-          <Link href="/analytics" className={`flex flex-col items-center gap-1 transition-colors ${pathname.includes("/analytics") ? "text-primary" : "text-slate-400 hover:text-primary"}`}>
-            <span className="material-symbols-rounded text-[24px]">monitoring</span>
-            <span className="text-[10px] font-bold">Stats</span>
-          </Link>
-          <Link href="/leaderboard" className={`flex flex-col items-center gap-1 transition-colors ${pathname.includes("/leaderboard") ? "text-primary" : "text-slate-400 hover:text-primary"}`}>
-            <span className="material-symbols-rounded text-[24px]">emoji_events</span>
-            <span className="text-[10px] font-bold">Rank</span>
-          </Link>
+            <div className="relative -top-5">
+              <button
+                onClick={handlePlay}
+                className="bg-primary w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-primary/40 hover:scale-105 transition-transform border-4 border-white dark:border-card-dark"
+              >
+                <span className="material-symbols-rounded text-white text-3xl ml-1">play_arrow</span>
+              </button>
+              <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-primary italic uppercase tracking-tighter">Mission</span>
+            </div>
+
+            <Link href="/analytics" className={`flex flex-col items-center gap-1 transition-colors ${pathname.includes("/analytics") ? "text-primary" : "text-slate-400 hover:text-primary"}`}>
+              <span className="material-symbols-rounded text-[24px]">monitoring</span>
+              <span className="text-[10px] font-bold">Stats</span>
+            </Link>
+            <Link href="/leaderboard" className={`flex flex-col items-center gap-1 transition-colors ${pathname.includes("/leaderboard") ? "text-primary" : "text-slate-400 hover:text-primary"}`}>
+              <span className="material-symbols-rounded text-[24px]">emoji_events</span>
+              <span className="text-[10px] font-bold">Rank</span>
+            </Link>
+          </div>
         </div>
-      </div>
       )}
 
       {/* ── Hamburger Side Drawer ── */}
       {isDrawerOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-[100] flex justify-end"
           onClick={handleOverlayClick}
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
-          <div 
+          <div
             ref={drawerRef}
             className="relative w-64 md:w-80 h-full bg-background-light dark:bg-background-dark border-l border-slate-200 dark:border-white/10 flex flex-col p-6 animate-in slide-in-from-right duration-200 shadow-2xl"
           >
-            <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-200 dark:border-white/10">
-              <span className="text-xl font-display font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent-orange">MENU</span>
-              <button onClick={() => setDrawerOpen(false)} className="text-slate-400 hover:text-primary p-2">
-                <span className="material-symbols-rounded text-2xl">close</span>
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-200 dark:border-white/10">
+              <span className="text-sm font-display font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent-orange uppercase">Navigation Hub</span>
+              <button onClick={() => setDrawerOpen(false)} className="text-slate-400 hover:text-primary p-1">
+                <span className="material-symbols-rounded text-xl">close</span>
               </button>
             </div>
-            
-            <div className="flex flex-col gap-2 flex-1 overflow-y-auto w-full">
+
+            <div className="flex flex-col gap-1 w-full">
               {[
-                { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
+                { label: "Dashboard", href: "/dashboard", icon: "grid_view" },
+                { label: `Notifications`, href: "/notifications", icon: "notifications", badge: unreadCount > 0 ? unreadCount : null },
                 { label: "Courses", href: "/subjects", icon: "school" },
                 { label: "AI Buddy", href: "/chat", icon: "forum" },
                 { label: "Analytics", href: "/analytics", icon: "monitoring" },
                 { label: "Leaderboard", href: "/leaderboard", icon: "emoji_events" },
                 { label: "Profile", href: "/profile", icon: "person" }
               ].map((item) => {
-                const isActive = pathname.startsWith(item.href);
+                const isActive = pathname === item.href;
                 return (
-                  <Link 
+                  <Link
                     key={item.href}
-                    href={item.href} 
+                    href={item.href}
                     onClick={() => setDrawerOpen(false)}
-                    className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${
-                      isActive 
-                        ? "bg-primary/10 text-primary font-bold" 
-                        : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 font-medium hover:text-primary"
-                    }`}
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-xl transition-all border border-transparent ${isActive
+                        ? "bg-primary/10 text-primary font-bold border-primary/20"
+                        : "text-white/60 hover:bg-white/5 hover:text-white"
+                      }`}
                   >
-                    <span className="material-symbols-rounded text-[22px]">{item.icon}</span> 
-                    {item.label}
+                    <div className="flex items-center gap-3">
+                      <span className={`material-symbols-rounded text-xl ${isActive ? 'text-primary' : 'text-white/30'}`}>{item.icon}</span>
+                      <span className="text-[11px] font-display font-bold tracking-tight uppercase leading-none">{item.label}</span>
+                    </div>
+                    {item.badge && (
+                      <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-lg shadow-[0_0_10px_rgba(244,63,94,0.4)]">
+                        {item.badge}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
 
               {/* Admin Panel Link — visible only to admins */}
-              {(me?.role === "admin" || me?.role === "super_admin") && (
-                <Link 
+              {me?.role === "admin" && (
+                <Link
                   href="/admin"
                   onClick={() => setDrawerOpen(false)}
-                  className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-orange-600 dark:text-orange-400 hover:bg-orange-500/10 font-bold border border-orange-500/10 mt-2"
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-orange-600 dark:text-orange-400 hover:bg-orange-500/10 font-bold border border-orange-500/10 mt-1"
                 >
-                  <span className="material-symbols-rounded text-[22px]">admin_panel_settings</span> 
-                  Admin Panel
+                  <span className="material-symbols-rounded text-lg">admin_panel_settings</span>
+                  <span className="text-[10px] uppercase font-black">Admin Panel</span>
                 </Link>
               )}
             </div>
 
-            <div className="mt-auto border-t border-slate-200 dark:border-white/10 pt-6 px-2">
-              <button 
-                onClick={handleLogout} 
-                className="flex items-center w-full gap-4 px-3 py-3 text-red-500 hover:bg-red-500/10 rounded-xl transition-colors font-medium"
+            <div className="mt-auto border-t border-slate-200 dark:border-white/10 pt-4 px-1">
+              <button
+                onClick={handleLogout}
+                className="flex items-center w-full gap-3 px-2 py-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors font-bold text-[10px] uppercase"
               >
-                <span className="material-symbols-rounded text-[22px]">logout</span> Logout
+                <span className="material-symbols-rounded text-lg">logout</span> Logout
               </button>
             </div>
           </div>

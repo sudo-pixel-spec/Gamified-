@@ -4,16 +4,20 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
 import {
-  listStandards, createStandard, updateStandard, deleteStandard, restoreStandard,
-  listSubjects, createSubject, updateSubject, deleteSubject, restoreSubject,
-  listUnits, createUnit, updateUnit, deleteUnit, restoreUnit,
-  listChapters, createChapter, updateChapter, deleteChapter, restoreChapter,
-  listLessons, createLesson, updateLesson, deleteLesson, restoreLesson,
+  listStandards, createStandard, updateStandard, deleteStandard, restoreStandard, fetchAllAdminStandards,
+  listSubjects, createSubject, updateSubject, deleteSubject, restoreSubject, fetchAllAdminSubjects,
+  listUnits, createUnit, updateUnit, deleteUnit, restoreUnit, fetchAllAdminUnits,
+  listChapters, createChapter, updateChapter, deleteChapter, restoreChapter, fetchAllAdminChapters,
+  listLessons, createLesson, updateLesson, deleteLesson, restoreLesson, fetchAllAdminLessons,
   restoreQuiz,
 } from "../../lib/admin-api";
 import { apiFetch } from "../../lib/api";
-import LessonVideoPanel from "../../components/LessonVideoPanel";
 import Link from "next/link";
+
+// Shared Components
+import DashboardStats from "./_components/DashboardStats";
+import ManagementGrid from "./_components/ManagementGrid";
+import EntityDrawer from "./_components/EntityDrawer";
 
 /* ────────────────────────────── seed runner (kept for seed modal) ── */
 
@@ -27,47 +31,70 @@ const AREA_FIELDS = {
   standards: [
     { key: "code", label: "Code", required: true, minLength: 3 },
     { key: "name", label: "Name", required: true },
-    { key: "description", label: "Description", type: "textarea" },
-    { key: "order", label: "Order", type: "number" },
+    { key: "orderIndex", label: "Order Index", type: "number" },
   ],
   subjects: [
     { key: "name", label: "Name", required: true },
-    { key: "description", label: "Description", type: "textarea" },
     { key: "standardId", label: "Standard ID", required: true },
-    { key: "order", label: "Order", type: "number" },
+    { key: "orderIndex", label: "Order Index", type: "number" },
   ],
   units: [
     { key: "name", label: "Name", required: true },
-    { key: "description", label: "Description", type: "textarea" },
     { key: "subjectId", label: "Subject ID", required: true },
-    { key: "order", label: "Order", type: "number" },
+    { key: "orderIndex", label: "Order Index", type: "number" },
   ],
   chapters: [
     { key: "name", label: "Name", required: true },
-    { key: "description", label: "Description", type: "textarea" },
     { key: "unitId", label: "Unit ID", required: true },
-    { key: "order", label: "Order", type: "number" },
+    { key: "orderIndex", label: "Order Index", type: "number" },
   ],
   lessons: [
     { key: "title", label: "Title", required: true },
     { key: "videoUrl", label: "Video URL" },
-    { key: "description", label: "Description", type: "textarea" },
-    { key: "content", label: "Content (Markdown)", type: "textarea" },
-    { key: "standardId", label: "Standard ID" },
+    { key: "contentText", label: "Markdown Content", type: "textarea" },
+    { key: "bullets", label: "Resource Links (One per line)", type: "textarea" },
     { key: "chapterId", label: "Chapter ID", required: true },
-    { key: "xp", label: "XP Value", type: "number" },
-    { key: "order", label: "Order", type: "number" },
+    { key: "orderIndex", label: "Order Index", type: "number" },
+
   ],
 };
 
-const AREAS = [
-  { key: "standards", label: "Standards", icon: "verified",    list: listStandards, create: createStandard, update: updateStandard, remove: deleteStandard, restore: restoreStandard },
-  { key: "subjects",  label: "Subjects",  icon: "menu_book",   list: listSubjects,  create: createSubject,  update: updateSubject,  remove: deleteSubject,  restore: restoreSubject },
-  { key: "units",     label: "Units",     icon: "folder_open",  list: listUnits,     create: createUnit,     update: updateUnit,     remove: deleteUnit,     restore: restoreUnit },
-  { key: "chapters",  label: "Chapters",  icon: "auto_stories", list: listChapters,  create: createChapter,  update: updateChapter,  remove: deleteChapter,  restore: restoreChapter },
-  { key: "lessons",   label: "Lessons",   icon: "co_present",   list: listLessons,   create: createLesson,   update: updateLesson,   remove: deleteLesson,   restore: restoreLesson },
-  { key: "quizzes",   label: "Quizzes",   icon: "quiz",         restore: restoreQuiz },
-  { key: "users",     label: "Users",     icon: "group" },
+
+const AREA_GROUPS = [
+  {
+    id: "curriculum",
+    label: "Curriculum Systems",
+    items: [
+      { key: "standards", label: "Grades & Standards", icon: "verified",    list: listStandards, create: createStandard, update: updateStandard, remove: deleteStandard, restore: restoreStandard },
+      { key: "subjects",  label: "Subject Logic",  icon: "menu_book",   list: listSubjects,  create: createSubject,  update: updateSubject,  remove: deleteSubject,  restore: restoreSubject },
+      { key: "units",     label: "Unit Structure",  icon: "folder_open",  list: listUnits,     create: createUnit,     update: updateUnit,     remove: deleteUnit,     restore: restoreUnit },
+      { key: "chapters",  label: "Chapter Flow",  icon: "auto_stories", list: listChapters,  create: createChapter,  update: updateChapter,  remove: deleteChapter,  restore: restoreChapter },
+      { key: "lessons",   label: "Lesson Content",   icon: "co_present",   list: listLessons,   create: createLesson,   update: updateLesson,   remove: deleteLesson,   restore: restoreLesson },
+    ]
+  },
+  {
+    id: "governance",
+    label: "Security & Staff",
+    superOnly: true,
+    items: [
+      { key: "users",     label: "Admin Access",     icon: "admin_panel_settings" },
+      { key: "audit",     label: "System Logs",     icon: "history" },
+      { key: "system",     label: "Mission Control", icon: "security" },
+    ]
+  },
+  {
+    id: "operations",
+    label: "Engagement",
+    items: [
+      { key: "notifications", label: "Broadcasts", icon: "notifications_active" },
+      { key: "student-search", label: "User IQ Hub", icon: "badge", path: "/admin/users/search" },
+      { key: "ui-preview",    label: "Mission Preview", icon: "preview", path: "/admin/system/preview" },
+      { key: "ui-preview-users", label: "Users Preview", icon: "group_add", path: "/admin/users/preview" },
+      { key: "ui-preview-jobs", label: "Jobs Preview", icon: "settings_remote", path: "/admin/jobs/preview" },
+      { key: "events",        label: "Live Events", icon: "event_upcoming" },
+      { key: "jobs",          label: "Worker Tasks", icon: "settings_suggest", superOnly: true },
+    ]
+  }
 ];
 
 /* ────────────────────────────── helpers ────────────────────────── */
@@ -92,50 +119,12 @@ function getPreviewText(value, maxLength = 220) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
-/* ────────────── Lesson Status Checklist ────────────────────────── */
-
-function LessonChecklist({ lesson, standards, chapters }) {
-  const hasVideo   = !!(lesson.videoUrl && lesson.videoUrl.trim());
-  const hasContent = !!(lesson.contentText || lesson.content || lesson.description);
-  const hasQuiz    = !!(lesson.hasQuiz || (lesson.quizCount != null && lesson.quizCount > 0));
-
-  const stdId  = lesson.standardId  || lesson.standard?.id  || lesson.standard?._id  || "—";
-  const chapId = lesson.chapterId   || lesson.chapter?.id   || lesson.chapter?._id   || "—";
-
-  const stdName  = standards.find(s => (s._id || s.id) === stdId)?.name  || null;
-  const chapName = chapters.find(c  => (c._id || c.id) === chapId)?.name || null;
-
-  const Check = ({ ok, label }) => (
-    <span className={`flex items-center gap-1 text-[11px] font-medium ${ok ? "text-emerald-400" : "text-rose-400"}`}>
-      <span className="material-symbols-outlined text-[14px]">{ok ? "check_circle" : "cancel"}</span>
-      {label}
-    </span>
-  );
-
-  return (
-    <div className="mt-3 space-y-2">
-      <div className="flex flex-wrap gap-3">
-        <Check ok={hasVideo}   label="Video" />
-        <Check ok={hasContent} label="Content" />
-        <Check ok={hasQuiz}    label="Quiz" />
-      </div>
-      <div className="flex flex-wrap gap-2 mt-1">
-        <span className="rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 px-2 py-0.5 text-[10px] font-bold">
-          STD: {stdName || stdId}
-        </span>
-        <span className="rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 px-2 py-0.5 text-[10px] font-bold">
-          CH: {chapName || chapId}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 /* ────────────────────────────── page ───────────────────────────── */
 
 export default function AdminPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useRequireAuth(["admin", "super_admin"]);
+  const { user, loading: authLoading } = useRequireAuth(["admin"]);
 
   const [counts, setCounts] = useState({ standards: 0, lessons: 0, quizzes: 0 });
   const [activeArea, setActiveArea] = useState(null);
@@ -147,6 +136,7 @@ export default function AdminPage() {
   const [formData, setFormData] = useState({});
   const [formError, setFormError] = useState("");
   const [formLoading, setFormLoading] = useState(false);
+  const [quizMap, setQuizMap] = useState({}); // { lessonId: boolean }
 
   // Cascading filters data
   const [allStandards, setAllStandards] = useState([]);
@@ -165,15 +155,14 @@ export default function AdminPage() {
     if (authLoading) return;
     let cancelled = false;
     (async () => {
-      const [stdsRes, lessonsRes] = await Promise.allSettled([
-        listStandards(),
-        listLessons(),
+      const [stds, lessons] = await Promise.all([
+        fetchAllAdminStandards(),
+        fetchAllAdminLessons(),
       ]);
       if (cancelled) return;
       setCounts({
-        standards: extract(stdsRes.status === "fulfilled" ? stdsRes.value : null).length,
-        lessons:   extract(lessonsRes.status === "fulfilled" ? lessonsRes.value : null).length,
-        quizzes: 0,
+        standards: stds.length,
+        lessons:   lessons.length,
       });
     })();
     return () => { cancelled = true; };
@@ -182,16 +171,16 @@ export default function AdminPage() {
   /* ── fetch all entities for cascading filters ── */
   useEffect(() => {
     if (authLoading) return;
-    Promise.allSettled([
-      apiFetch("/v1/curriculum/standards"),
-      apiFetch("/v1/admin/subjects?limit=500"),
-      apiFetch("/v1/admin/units?limit=500"),
-      apiFetch("/v1/admin/chapters?limit=500"),
-    ]).then(([stdsRes, subsRes, unitsRes, chapsRes]) => {
-      if (stdsRes.status === "fulfilled") setAllStandards(extract(stdsRes.value));
-      if (subsRes.status === "fulfilled") setAllSubjects(extract(subsRes.value));
-      if (unitsRes.status === "fulfilled") setAllUnits(extract(unitsRes.value));
-      if (chapsRes.status === "fulfilled") setAllChapters(extract(chapsRes.value));
+    Promise.all([
+      fetchAllAdminStandards(),
+      fetchAllAdminSubjects(),
+      fetchAllAdminUnits(),
+      fetchAllAdminChapters(),
+    ]).then(([stds, subs, units, chaps]) => {
+      setAllStandards(stds);
+      setAllSubjects(subs);
+      setAllUnits(units);
+      setAllChapters(chaps);
     });
   }, [authLoading]);
 
@@ -201,6 +190,30 @@ export default function AdminPage() {
       router.push("/admin/users");
       return;
     }
+    if (area.key === "audit") {
+      router.push("/admin/audit");
+      return;
+    }
+    if (area.key === "jobs") {
+      router.push("/admin/jobs");
+      return;
+    }
+    if (area.key === "notifications") {
+      router.push("/admin/notifications");
+      return;
+    }
+    if (area.key === "events") {
+      router.push("/admin/events");
+      return;
+    }
+    if (area.key === "system") {
+      router.push("/admin/system");
+      return;
+    }
+    if (area.key === "student-search" || area.key.startsWith("ui-preview")) {
+      router.push(area.path);
+      return;
+    }
     if (!area.list) return;
     setActiveArea(area);
     setAreaLoading(true);
@@ -208,9 +221,15 @@ export default function AdminPage() {
     setFilterSubId("");
     setFilterUnitId("");
     setFilterChapterId("");
-    const res = await area.list();
-    setItems(extract(res));
-    setAreaLoading(false);
+    setQuizMap({}); // Clear previous area quiz cache
+    try {
+      const res = await area.list();
+      setItems(extract(res));
+    } catch (err) {
+      console.error("Area load failed:", err);
+    } finally {
+      setAreaLoading(false);
+    }
   }, [router]);
 
   const closeArea = () => {
@@ -236,9 +255,14 @@ export default function AdminPage() {
       for (const f of fields) {
         const val = formData[f.key];
         if (val !== undefined && val !== "") {
-          payload[f.key] = f.type === "number" ? Number(val) : val;
+          if (f.key === "bullets" && typeof val === "string") {
+            payload[f.key] = val.split("\n").map(s => s.trim()).filter(s => s !== "");
+          } else {
+            payload[f.key] = f.type === "number" ? Number(val) : val;
+          }
         }
       }
+
       delete payload.jobStatus;
 
       if (editingItem) {
@@ -250,8 +274,13 @@ export default function AdminPage() {
       setItems(extract(res));
       closeForm();
     } catch (err) {
-      setFormError(err?.message || "Something went wrong");
+      if (err.message?.includes("500") || err.name === "TypeError") {
+        setFormError("System Error: The ID you entered might be invalid or not found in the database. Please verify and try again.");
+      } else {
+        setFormError(err?.message || "Something went wrong");
+      }
     } finally {
+
       setFormLoading(false);
     }
   }, [activeArea, formData, editingItem]);
@@ -318,6 +347,35 @@ export default function AdminPage() {
     return filterUnitId ? allChapters.filter(c => (c.unitId || c.unit?._id || c.unit?.id) === filterUnitId) : allChapters;
   }, [allChapters, filterUnitId]);
 
+  /* ── Fetch quiz status for visible lessons ── */
+  useEffect(() => {
+    if (activeArea?.key !== "lessons" || filteredItems.length === 0) return;
+
+    let cancelled = false;
+    const lessonsToFetch = filteredItems.filter(l => quizMap[getItemId(l)] === undefined);
+    
+    if (lessonsToFetch.length === 0) return;
+
+    (async () => {
+      for (const lesson of lessonsToFetch) {
+        if (cancelled) break;
+        const id = getItemId(lesson);
+        try {
+          const res = await apiFetch(`/v1/admin/quizzes/latest?lessonId=${id}`);
+          const quiz = res?.data ?? res;
+          const hasQ = !!(quiz && (Array.isArray(quiz) ? quiz.length > 0 : (quiz._id || quiz.id)));
+          if (!cancelled) {
+            setQuizMap(prev => ({ ...prev, [id]: hasQ }));
+          }
+        } catch (e) {
+          if (!cancelled) setQuizMap(prev => ({ ...prev, [id]: false }));
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [activeArea, filteredItems, quizMap]);
+
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a]">
@@ -327,7 +385,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden pb-24 bg-[#0a0a0a] text-white">
+    <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden pb-8 bg-[#0a0a0a] text-white">
 
       {/* ══════ Header ══════ */}
       <header className="flex items-center justify-between p-4 sticky top-0 z-10 bg-[#0a0a0a]/90 backdrop-blur-md border-b border-orange-500/20">
@@ -346,347 +404,71 @@ export default function AdminPage() {
             Student View
           </button>
           <button
-            onClick={() => router.push("/admin/seed")}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary/20 text-primary text-sm font-bold rounded-lg hover:bg-primary/20 transition-colors"
-          >
-            <span className="material-symbols-outlined text-[18px]">bolt</span>
-            Seed
-          </button>
-          <button
             onClick={() => router.push("/dashboard")}
             className="flex size-10 items-center justify-center rounded-full bg-[#141414] border border-orange-500/20 hover:border-primary transition-colors"
           >
             <span className="material-symbols-outlined text-white/60">account_circle</span>
           </button>
         </div>
+
       </header>
 
       <main className="flex flex-col gap-6 p-4">
 
-        {/* ══════ Stats ══════ */}
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-3">
-          <StatCard label="Total Standards" value={counts.standards} up />
-          <StatCard label="Active Lessons"  value={counts.lessons} up />
-          <StatCard label="Pending Quizzes" value={counts.quizzes} className="col-span-2 md:col-span-1" />
-        </section>
+        <DashboardStats counts={counts} />
 
-        {/* ══════ Seed Link Banner (replaces Seed Data Preview) ══════ */}
-        <section className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-4 flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="font-bold text-sm text-white">Seed Curriculum Data</p>
-            <p className="text-xs text-white/50 mt-0.5">
-              Use the dedicated seed page to insert the complete CBSE Grade VIII Data Science handbook.
-            </p>
-          </div>
-          <button
-            onClick={() => router.push("/admin/seed")}
-            className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-orange-600 transition-colors active:scale-95"
-          >
-            <span className="material-symbols-outlined text-[18px]">open_in_new</span>
-            Open Seed Page
-          </button>
-        </section>
 
-        {/* ══════ Management Areas ══════ */}
-        <section>
-          <h2 className="text-lg font-bold mb-4 px-1">Management Areas</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {AREAS.map((area) => (
-              <button
-                key={area.key}
-                onClick={() => openArea(area)}
-                className="flex flex-col items-start gap-3 rounded-xl border border-orange-500/10 bg-[#141414] p-5 hover:border-primary/50 hover:bg-primary/5 transition-all active:scale-95 group text-left"
-              >
-                <div className="p-2 rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white transition-colors">
-                  <span className="material-symbols-outlined">{area.icon}</span>
-                </div>
-                <span className="font-bold text-white">{area.label}</span>
-              </button>
-            ))}
-          </div>
-        </section>
+
+
+
+        <ManagementGrid 
+          groups={AREA_GROUPS} 
+          user={user} 
+          onOpenArea={openArea} 
+        />
       </main>
 
-      {/* ══════ Area Detail Drawer ══════ */}
       {activeArea && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-[#0a0a0a]">
-          <header className="flex items-center justify-between p-4 border-b border-orange-500/20 bg-[#0a0a0a]/95 backdrop-blur-md">
-            <div className="flex items-center gap-3">
-              <button onClick={showForm ? closeForm : closeArea} className="p-1 rounded-lg hover:bg-white/10 transition-colors">
-                <span className="material-symbols-outlined text-white">arrow_back</span>
-              </button>
-              <h2 className="text-lg font-bold text-white">
-                {showForm
-                  ? (editingItem ? "Edit" : "Create") + " " + activeArea.label.replace(/s$/, "")
-                  : activeArea.label}
-              </h2>
-            </div>
-            {!showForm && activeArea.create && AREA_FIELDS[activeArea.key] && (
-              <button
-                onClick={openCreateForm}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-sm font-bold rounded-lg hover:bg-orange-600 transition-colors active:scale-95"
-              >
-                <span className="material-symbols-outlined text-[18px]">add</span>
-                Create New
-              </button>
-            )}
-          </header>
-
-          {/* ── Lesson Cascading Filters ── */}
-          {!showForm && activeArea.key === "lessons" && (
-            <div className="px-4 py-3 border-b border-orange-500/10 flex flex-wrap gap-3 bg-[#0f0f0f]">
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-white/50 font-medium shrink-0">Grade</label>
-                <select
-                  value={filterStdId}
-                  onChange={e => { setFilterStdId(e.target.value); setFilterSubId(""); setFilterUnitId(""); setFilterChapterId(""); }}
-                  className="bg-[#1a1a1a] border border-orange-500/20 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary"
-                >
-                  <option value="">All</option>
-                  {allStandards.map(s => (
-                    <option key={s._id || s.id} value={s._id || s.id}>{s.code}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-white/50 font-medium shrink-0">Subject</label>
-                <select
-                  value={filterSubId}
-                  onChange={e => { setFilterSubId(e.target.value); setFilterUnitId(""); setFilterChapterId(""); }}
-                  className="bg-[#1a1a1a] border border-orange-500/20 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary max-w-[120px]"
-                >
-                  <option value="">All</option>
-                  {subjectsForFilter.map(s => (
-                    <option key={s._id || s.id} value={s._id || s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-white/50 font-medium shrink-0">Unit</label>
-                <select
-                  value={filterUnitId}
-                  onChange={e => { setFilterUnitId(e.target.value); setFilterChapterId(""); }}
-                  className="bg-[#1a1a1a] border border-orange-500/20 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary max-w-[100px]"
-                >
-                  <option value="">All</option>
-                  {unitsForFilter.map(u => (
-                    <option key={u._id || u.id} value={u._id || u.id}>{u.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-white/50 font-medium shrink-0">Chapter</label>
-                <select
-                  value={filterChapterId}
-                  onChange={e => setFilterChapterId(e.target.value)}
-                  className="bg-[#1a1a1a] border border-orange-500/20 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary max-w-[120px]"
-                >
-                  <option value="">All</option>
-                  {chaptersForFilter.map(c => (
-                    <option key={c._id || c.id} value={c._id || c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-              <span className="text-[11px] text-white/30 self-center font-bold uppercase tracking-widest">
-                {filteredItems.length} Lessons Found
-              </span>
-            </div>
-          )}
-
-          <div className="flex-1 overflow-y-auto p-4">
-            {showForm ? (
-              <div className="max-w-lg mx-auto space-y-8">
-                <form onSubmit={handleFormSubmit} className="space-y-4">
-                  {formError && (
-                    <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-xl text-red-300 text-sm">{formError}</div>
-                  )}
-                  {(AREA_FIELDS[activeArea.key] || []).map((field) => (
-                    <div key={field.key}>
-                      <label className="block text-sm font-medium mb-1.5 text-white/80">
-                        {field.label}{field.required && <span className="text-red-400 ml-0.5">*</span>}
-                      </label>
-                      {field.type === "textarea" ? (
-                        <textarea
-                          className="w-full px-3 py-2 bg-[#141414] border border-orange-500/20 rounded-xl focus:outline-none focus:border-primary transition text-sm min-h-[100px] resize-y text-white"
-                          value={formData[field.key] || ""}
-                          onChange={(e) => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
-                          required={field.required}
-                          placeholder={field.label}
-                        />
-                      ) : (
-                        <input
-                          type={field.type || "text"}
-                          className="w-full px-3 py-2 bg-[#141414] border border-orange-500/20 rounded-xl focus:outline-none focus:border-primary transition text-sm text-white"
-                          value={formData[field.key] || ""}
-                          onChange={(e) => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
-                          required={field.required}
-                          minLength={field.minLength}
-                          placeholder={field.label}
-                        />
-                      )}
-                    </div>
-                  ))}
-                  <button
-                    type="submit"
-                    disabled={formLoading}
-                    className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-2.5 px-4 rounded-xl transition-all active:scale-95 disabled:opacity-50"
-                  >
-                    {formLoading ? "Saving..." : editingItem ? "Update" : "Create"}
-                  </button>
-                </form>
-
-                {/* Video Panel only in form */}
-                {activeArea.key === "lessons" && editingItem && !editingItem.deletedAt && (
-                   <div className="pt-8 border-t border-orange-500/20">
-                     <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                       <span className="material-symbols-outlined text-primary">play_circle</span>
-                       Manage Lesson Video
-                     </h3>
-                     <LessonVideoPanel
-                       lessonId={getItemId(editingItem)}
-                       lessonTitle={editingItem.title}
-                       lessonContent={editingItem.contentText ?? editingItem.content ?? ""}
-                       currentVideoUrl={editingItem.videoUrl ?? ""}
-                       onSaved={(url) => {
-                         setItems(prev => prev.map(i => getItemId(i) === getItemId(editingItem) ? { ...i, videoUrl: url } : i));
-                         setEditingItem(prev => ({ ...prev, videoUrl: url }));
-                       }}
-                     />
-                   </div>
-                )}
-              </div>
-            ) : areaLoading ? (
-              <div className="flex justify-center py-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-              </div>
-            ) : filteredItems.length === 0 ? (
-              <div className="text-center py-12">
-                <span className="material-symbols-outlined text-4xl text-white/20">inbox</span>
-                <p className="text-white/40 mt-2">No {activeArea.label.toLowerCase()} found matching your filters</p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {filteredItems.map((item) => {
-                  const itemId = getItemId(item);
-                  const detailFields = (AREA_FIELDS[activeArea.key] || []).filter(field => hasValue(item[field.key]));
-                  const metaFields = detailFields.filter(f => !["description", "content", "videoUrl"].includes(f.key));
-                  const textFields = detailFields.filter(f => ["description", "content"].includes(f.key));
-
-                  return (
-                    <div
-                      key={itemId}
-                      className="rounded-xl border border-orange-500/10 bg-[#141414] p-4 hover:border-orange-500/20 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-semibold break-words text-white">
-                              {item.name || item.title || item.label || itemId}
-                            </p>
-                            {activeArea.key === "lessons" && (
-                              <Link
-                                href={`/lesson/${itemId}`}
-                                className="inline-flex items-center gap-1 text-[10px] bg-primary/20 text-primary border border-primary/20 px-2 py-0.5 rounded uppercase font-bold hover:bg-primary hover:text-white transition-colors"
-                              >
-                                View Page
-                                <span className="material-symbols-outlined text-[12px]">open_in_new</span>
-                              </Link>
-                            )}
-                          </div>
-                          {item.deletedAt && <span className="text-[10px] text-rose-400 font-medium">Deleted</span>}
-                          {itemId && (
-                            <p className="text-[11px] text-white/30 mt-1 break-all font-mono">ID: {itemId}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {activeArea.update && AREA_FIELDS[activeArea.key] && !item.deletedAt && (
-                            <button
-                              onClick={() => openEditForm(item)}
-                              className="p-1.5 rounded-lg text-blue-400 hover:bg-blue-500/10 transition-colors"
-                              title="Edit"
-                            >
-                              <span className="material-symbols-outlined text-[20px]">edit</span>
-                            </button>
-                          )}
-                          {item.deletedAt && activeArea.restore ? (
-                            <button
-                              onClick={() => handleRestore(activeArea, itemId)}
-                              className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-                              title="Restore"
-                            >
-                              <span className="material-symbols-outlined text-[20px]">restore</span>
-                            </button>
-                          ) : (
-                            activeArea.remove && (
-                              <button
-                                onClick={() => handleDelete(activeArea, itemId)}
-                                className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 transition-colors"
-                                title="Delete"
-                              >
-                                <span className="material-symbols-outlined text-[20px]">delete</span>
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </div>
-
-                      {metaFields.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {metaFields.map((field) => (
-                            <span
-                              key={field.key}
-                              className="rounded-full bg-white/5 border border-white/10 px-2.5 py-1 text-[11px] text-white/60"
-                            >
-                              {field.label}: {String(item[field.key])}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {textFields.length > 0 && (
-                        <div className="mt-3 space-y-3">
-                          {textFields.map((field) => (
-                            <div key={field.key} className="rounded-lg border border-white/5 bg-[#111] p-3">
-                              <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1">{field.label}</p>
-                              <p className="text-sm text-white/60 whitespace-pre-wrap break-words line-clamp-4">
-                                {getPreviewText(item[field.key], field.key === "content" ? 320 : 220)}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {activeArea.key === "lessons" && !item.deletedAt && (
-                        <LessonChecklist lesson={item} standards={allStandards} chapters={allChapters} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+        <EntityDrawer 
+          activeArea={activeArea}
+          showForm={showForm}
+          editingItem={editingItem}
+          formData={formData}
+          formError={formError}
+          formLoading={formLoading}
+          areaLoading={areaLoading}
+          items={items}
+          filteredItems={filteredItems}
+          allStandards={allStandards}
+          allChapters={allChapters}
+          quizMap={quizMap}
+          filterStdId={filterStdId}
+          filterSubId={filterSubId}
+          filterUnitId={filterUnitId}
+          filterChapterId={filterChapterId}
+          subjectsForFilter={subjectsForFilter}
+          unitsForFilter={unitsForFilter}
+          chaptersForFilter={chaptersForFilter}
+          onClose={closeArea}
+          onCloseForm={closeForm}
+          onOpenCreateForm={openCreateForm}
+          onOpenEditForm={openEditForm}
+          onFormSubmit={handleFormSubmit}
+          onDelete={handleDelete}
+          onRestore={handleRestore}
+          onSetFormData={setFormData}
+          onSetFilterStdId={setFilterStdId}
+          onSetFilterSubId={setFilterSubId}
+          onSetFilterUnitId={setFilterUnitId}
+          onSetFilterChapterId={setFilterChapterId}
+          onSetItems={setItems}
+          onSetEditingItem={setEditingItem}
+          router={router}
+          AREA_FIELDS={AREA_FIELDS}
+        />
       )}
 
-      {/* ══════ Bottom Nav ══════ */}
-      <nav className="fixed bottom-0 left-0 right-0 border-t border-orange-500/20 bg-[#0a0a0a]/90 backdrop-blur-lg px-4 pb-6 pt-2 z-40">
-        <div className="mx-auto flex max-w-md gap-2">
-          {[
-            { key: "home", icon: "home", label: "Home" },
-            { key: "search", icon: "search", label: "Search" },
-            { key: "settings", icon: "settings", label: "Settings" },
-          ].map(({ key, icon, label }) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`flex flex-1 flex-col items-center justify-center gap-1 py-1 transition-colors ${tab === key ? "text-primary" : "text-white/40 hover:text-primary"}`}
-            >
-              <span className="material-symbols-outlined" style={tab === key ? { fontVariationSettings: "'FILL' 1" } : undefined}>{icon}</span>
-              <p className="text-[10px] font-bold uppercase tracking-widest">{label}</p>
-            </button>
-          ))}
-        </div>
-      </nav>
+
     </div>
   );
 }

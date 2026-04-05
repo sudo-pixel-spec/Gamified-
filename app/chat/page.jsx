@@ -119,11 +119,13 @@ export default function ChatPage() {
       setMessages(finalized);
       saveChatHistory(finalized);
     } catch (e) {
-      if (e.message?.includes("Too many AI requests") || e.message?.includes("429")) {
+      if (e.message?.includes("429")) {
         setRateLimited(true);
         setError("You've reached your daily AI message limit. Come back tomorrow, Cadet! 🌙");
+      } else if (e.message?.includes("403")) {
+        setError("Mission locked: Please complete your profile first!");
       } else {
-        setError(e.message || "Signal lost. Try again.");
+        setError(e.message || "Signal lost. (Check AI route)");
       }
     } finally {
       setLoading(false);

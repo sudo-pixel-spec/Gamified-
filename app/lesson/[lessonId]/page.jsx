@@ -4,9 +4,117 @@ import { useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useRequireAuth } from "../../../hooks/useRequireAuth";
 import { apiFetch } from "../../../lib/api";
-import { listLessons } from "../../../lib/admin-api";
+import { listLessons, createQuizVersion } from "../../../lib/admin-api";
 import LessonTabs from "../../../components/LessonTabs";
 import { motion, AnimatePresence } from "framer-motion";
+
+
+// ── Admin Quiz Creator Modal ───────────────────────────────────────────────
+
+function QuizCreatorModal({ show, onClose, lessonId, onSuccess }) {
+  const [questions, setQuestions] = useState([{ prompt: "", options: ["", "", "", ""], answerIndex: 0 }]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const addQuestion = () => setQuestions([...questions, { prompt: "", options: ["", "", "", ""], answerIndex: 0 }]);
+  const removeQuestion = (idx) => setQuestions(questions.filter((_, i) => i !== idx));
+
+  const updateQuestion = (idx, field, val) => {
+    const next = [...questions];
+    next[idx][field] = val;
+    setQuestions(next);
+  };
+
+  const updateOption = (qIdx, optIdx, val) => {
+    const next = [...questions];
+    next[qIdx].options[optIdx] = val;
+    setQuestions(next);
+  };
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await createQuizVersion({
+        lessonId,
+        questions: questions.map((q, i) => ({ ...q, qid: `q${i + 1}` })),
+        published: true
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err.message || "Failed to create quiz");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!show) return null;
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+      <div className="w-full max-w-2xl bg-[#141414] border border-orange-500/20 rounded-3xl p-8 max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="flex items-center justify-between mb-8">
+          <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter">Create Lesson Quiz</h2>
+          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full"><span className="material-symbols-outlined">close</span></button>
+        </div>
+
+        {error && <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm">{error}</div>}
+
+        <div className="space-y-12">
+          {questions.map((q, qIdx) => (
+            <div key={qIdx} className="space-y-6 p-6 bg-white/5 rounded-2xl border border-white/5 relative">
+              <button onClick={() => removeQuestion(qIdx)} className="absolute top-4 right-4 text-white/20 hover:text-red-500 transition-colors">
+                <span className="material-symbols-outlined text-sm">delete</span>
+              </button>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-primary tracking-widest">Question {qIdx + 1}</label>
+                <input 
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-white focus:border-primary outline-none"
+                  placeholder="Enter the question prompt..."
+                  value={q.prompt}
+                  onChange={e => updateQuestion(qIdx, "prompt", e.target.value)}
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {q.options.map((opt, oIdx) => (
+                  <div key={oIdx} className="flex items-center gap-3 bg-black/20 p-3 rounded-xl border border-white/5">
+                    <input 
+                      type="radio" 
+                      name={`correct-${qIdx}`} 
+                      checked={q.answerIndex === oIdx}
+                      onChange={() => updateQuestion(qIdx, "answerIndex", oIdx)}
+                      className="accent-primary"
+                    />
+                    <input 
+                      className="flex-1 bg-transparent border-none text-sm text-white focus:outline-none"
+                      placeholder={`Option ${oIdx + 1}`}
+                      value={opt}
+                      onChange={e => updateOption(qIdx, oIdx, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-8 flex flex-col gap-4">
+          <button onClick={addQuestion} className="w-full border-2 border-dashed border-white/10 hover:border-primary/40 p-4 rounded-2xl text-xs font-bold text-white/40 hover:text-primary transition-all flex items-center justify-center gap-2">
+            <span className="material-symbols-outlined text-sm">add</span> ADD QUESTION
+          </button>
+          <button 
+            disabled={loading}
+            onClick={handleSubmit}
+            className="w-full bg-primary hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-primary/20 transition-all active:scale-95 disabled:opacity-50"
+          >
+            {loading ? "SAVING..." : "PUBLISH QUIZ VERSION"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -27,10 +135,27 @@ function isYouTube(url = "") {
 }
 
 function toEmbedUrl(url = "") {
-  return url
-    .replace("watch?v=", "embed/")
-    .replace("youtu.be/", "youtube.com/embed/");
+  // Robust YouTube ID extraction
+  const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
+  const match = url.match(regex);
+  const id = match ? match[1] : null;
+
+  if (id) return `https://www.youtube.com/embed/${id}`;
+  
+  // Fallback for Google Drive
+  if (url.includes("drive.google.com")) {
+      return url.replace("/view", "/preview").replace("/edit", "/preview");
+  }
+  return url;
 }
+
+
+function isDirectVideo(url = "") {
+  const directExtensions = [".mp4", ".webm", ".ogg", ".mov"];
+  const cleanUrl = url.split("?")[0].toLowerCase();
+  return directExtensions.some(ext => cleanUrl.endsWith(ext));
+}
+
 
 // ── Completion Modal ───────────────────────────────────────────────────────
 
@@ -45,11 +170,15 @@ function CompletionModal({ show, xp, onNext }) {
       >
         <div className="text-6xl mb-4 animate-bounce">🎉</div>
         <h2 className="text-3xl font-extrabold text-white mb-2">Amazing Job!</h2>
-        <p className="text-white/60 mb-6">You've successfully completed this lesson.</p>
+        <p className="text-white/60 mb-6">You&apos;ve successfully completed this lesson.</p>
         
         <div className="bg-primary/10 border border-primary/20 rounded-2xl py-4 mb-8">
-          <p className="text-xs font-bold text-primary uppercase tracking-widest mb-1">XP Earned</p>
-          <p className="text-4xl font-black text-white">+{xp} XP</p>
+          <p className="text-xs font-bold text-primary uppercase tracking-widest mb-1">
+            {xp > 0 ? "XP Earned" : "Mission Mastery"}
+          </p>
+          <p className="text-4xl font-black text-white">
+            {xp > 0 ? `+${xp} XP` : "Mastered"}
+          </p>
         </div>
 
         <button 
@@ -91,46 +220,52 @@ const SAMPLE_QUIZ = {
   difficulty: "hard"
 };
 
-function QuizSection({ lessonId, lessonXP, onComplete }) {
+function QuizSection({ lessonId, lessonXP, onComplete, isAdmin }) {
   const [quiz, setQuiz] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selected, setSelected] = useState(null);
-  const [score, setScore] = useState(0);
   const [answers, setAnswers] = useState([]);
-  const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
   const [isFallback, setIsFallback] = useState(false);
+  const [showCreator, setShowCreator] = useState(false);
+  const [done, setDone] = useState(false);
+  const [score, setScore] = useState(0);
+  const [status, setStatus] = useState("idle");
+
+  const fetchQuiz = async () => {
+    try {
+      setLoading(true);
+      // Admins get the full quiz with answers for validation; students get redacted data
+      const endpoint = isAdmin 
+        ? `/v1/admin/quizzes/latest?lessonId=${lessonId}` 
+        : `/v1/attempts/quiz/${lessonId}`;
+        
+      const res = await apiFetch(endpoint);
+      const quizData = res?.data ?? res;
+      if (quizData?.questions?.length) {
+        setQuiz(quizData);
+        setIsFallback(false);
+      } else {
+        setQuiz(null);
+      }
+    } catch (err) {
+      console.warn("Quiz fetch error:", err);
+      setQuiz(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        // As requested: Using the admin route for the quiz.
-        // If 403 occurs, we still catch it to avoid breaking the lesson, but we call the route directly.
-        const res = await apiFetch(`/v1/admin/quizzes/latest?lessonId=${lessonId}`);
-        if (res?.data) {
-          setQuiz(res.data);
-          setIsFallback(false);
-        }
-      } catch (err) {
-        console.warn("Quiz fetch resulted in error (Admin route restricted?):", err);
-        // Fallback for students (403 Forbidden)
-        if (err.status === 403 || String(err).includes("403")) {
-          setQuiz(SAMPLE_QUIZ);
-          setIsFallback(true);
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
+    fetchQuiz();
   }, [lessonId]);
+
 
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      // POST /v1/attempts/submit
-      await apiFetch("/v1/attempts/submit", {
+      const res = await apiFetch("/v1/attempts/submit", {
         method: "POST",
         body: JSON.stringify({
           lessonId,
@@ -138,87 +273,209 @@ function QuizSection({ lessonId, lessonXP, onComplete }) {
           idempotencyKey: `quiz_${lessonId}_${Date.now()}`
         })
       });
-      onComplete(lessonXP);
+      const realXP = res?.xpAwarded ?? res?.data?.xpAwarded ?? lessonXP;
+      onComplete(realXP);
     } catch (err) {
       console.error("Failed to submit attempt", err);
-      // Fallback locally for demo
-      onComplete(lessonXP);
+      if (isAdmin) {
+        onComplete(lessonXP);
+      } else {
+        alert(err.message || "Failed to submit quiz. You may have already completed this lesson.");
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
   if (loading) return <div className="p-8 text-center text-white/40">Preparing your challenge...</div>;
-  if (!quiz || !quiz.questions?.length) return <div className="p-8 text-center text-white/40 italic">No quiz available for this lesson yet.</div>;
-
-  const current = quiz.questions[currentIdx];
-  const isFinal = currentIdx === quiz.questions.length - 1;
-
-  const handleNext = () => {
-    if (selected === current.answerIndex) setScore(s => s + 1);
-    setAnswers(prev => [...prev, { qid: current.qid, selectedIndex: selected }]);
-    
-    if (isFinal) {
-      setDone(true);
-    } else {
-      setCurrentIdx(i => i + 1);
-      setSelected(null);
-    }
-  };
-
-  if (done) {
+  if (!quiz || !quiz.questions?.length) {
     return (
-      <div className="p-8 text-center">
-        <h3 className="text-xl font-bold mb-4">Quiz Finished!</h3>
-        <p className="text-white/60 mb-6">You got {score} out of {quiz.questions.length} right.</p>
-        <button 
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="bg-primary px-8 py-3 rounded-xl font-bold hover:bg-orange-600 transition-colors"
-        >
-          {submitting ? "Claiming XP..." : "Finish Lesson"}
-        </button>
+      <div className="p-20 text-center flex flex-col items-center gap-6">
+        <div className="opacity-30">
+          <span className="material-symbols-outlined text-6xl">quiz_off</span>
+          <p className="mt-4 italic text-sm">No quiz available for this lesson yet.</p>
+        </div>
+        
+        {isAdmin && (
+           <div className="mt-8 p-8 border border-white/5 bg-white/5 rounded-[3rem] w-full max-w-sm">
+              <p className="text-[10px] font-black uppercase text-primary tracking-widest mb-4">Instructor Portal</p>
+              <h4 className="text-xl font-bold mb-6">Build the first quiz version?</h4>
+              <button 
+                onClick={() => setShowCreator(true)}
+                className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-primary/20 transition-all border-b-4 border-orange-700 active:border-b-0 active:translate-y-1"
+              >
+                CREATE QUIZ NOW
+              </button>
+           </div>
+        )}
+
+        <QuizCreatorModal 
+          show={showCreator} 
+          lessonId={lessonId} 
+          onClose={() => setShowCreator(false)} 
+          onSuccess={() => { setShowCreator(false); fetchQuiz(); }}
+        />
       </div>
     );
   }
 
+
+  const current = quiz.questions[currentIdx];
+  const isFinal = currentIdx === quiz.questions.length - 1;
+  const hasAnswerIndex = current.answerIndex !== undefined;
+  const isCorrect = hasAnswerIndex ? selected === current.answerIndex : true; // default to 'true' style progression if unknown
+
+  const handleAction = () => {
+    // If backend doesn't give us the answer to verify, just skip the "Check Answer" phase and go straight to next!
+    if (status === "idle" && hasAnswerIndex) {
+      setStatus("checked");
+      if (isCorrect) setScore((s) => s + 1);
+    } else {
+      // Move to next
+      setAnswers((prev) => [...prev, { qid: current.qid, selectedIndex: selected }]);
+      if (isFinal) {
+        setDone(true);
+      } else {
+        setCurrentIdx((i) => i + 1);
+        setSelected(null);
+        setStatus("idle");
+      }
+    }
+  };
+
+  if (done) {
+    const accuracy = hasAnswerIndex ? Math.round((score / quiz.questions.length) * 100) : null;
+    return (
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="p-10 text-center flex flex-col items-center"
+      >
+        {accuracy !== null && (
+          <div className="w-32 h-32 mb-6 rounded-full border-4 border-primary/20 flex flex-col items-center justify-center bg-primary/10 shadow-[0_0_40px_rgba(255,107,0,0.2)]">
+            <span className="text-4xl font-black text-primary">{accuracy}%</span>
+            <span className="text-xs font-bold text-primary/60 uppercase">Accuracy</span>
+          </div>
+        )}
+        <h3 className="text-2xl font-black text-white mb-2">Quiz Complete!</h3>
+        <p className="text-white/60 mb-8 font-medium">Your answers have been recorded.</p>
+        <button 
+          onClick={handleSubmit}
+          disabled={submitting}
+          className="w-full max-w-xs bg-primary hover:bg-orange-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-primary/25 transition-all outline-none"
+        >
+          {submitting ? "Claiming XP..." : "Finish & Claim Rewards"}
+        </button>
+      </motion.div>
+    );
+  }
+
   return (
-    <div className="p-8">
+    <div className="p-6 md:p-10 relative overflow-hidden">
       {isFallback && (
         <div className="mb-6 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-[10px] text-blue-400 font-bold uppercase tracking-widest flex items-center gap-2">
           <span className="material-symbols-outlined text-sm">info</span>
           Demo Mode: Real Quiz API coming soon for students!
         </div>
       )}
-      <div className="mb-8 flex justify-between items-center">
-        <span className="text-xs font-bold text-primary uppercase">Question {currentIdx + 1} of {quiz.questions.length}</span>
-        <div className="h-1.5 w-32 bg-white/5 rounded-full overflow-hidden">
-          <div className="h-full bg-primary transition-all duration-300" style={{ width: `${((currentIdx + 1) / quiz.questions.length) * 100}%` }} />
+      
+      {/* Progress Bar */}
+      <div className="mb-8 flex flex-col gap-2">
+        <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider">
+          <span className="text-white/40">Progress</span>
+          <span className="text-primary">{currentIdx + 1} / {quiz.questions.length}</span>
+        </div>
+        <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+          <motion.div 
+            className="h-full bg-primary" 
+            initial={{ width: 0 }}
+            animate={{ width: `${((currentIdx) / quiz.questions.length) * 100}%` }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+          />
         </div>
       </div>
-      <h3 className="text-lg font-bold mb-6">{current.prompt}</h3>
-      <div className="space-y-3">
-        {current.options.map((opt, idx) => (
-          <button
-            key={idx}
-            onClick={() => setSelected(idx)}
-            className={`w-full text-left p-4 rounded-xl border transition-all ${
-              selected === idx 
-                ? "bg-primary/20 border-primary text-white" 
-                : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"
-            }`}
-          >
-            {opt}
-          </button>
-        ))}
+
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={currentIdx}
+          initial={{ x: 20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          exit={{ x: -20, opacity: 0 }}
+          transition={{ duration: 0.25, ease: "easeInOut" }}
+          className="space-y-8"
+        >
+          <h3 className="text-xl md:text-2xl font-extrabold leading-snug">{current.prompt}</h3>
+          
+          <div className="space-y-3">
+            {current.options.map((opt, idx) => {
+              const isSelected = selected === idx;
+              const isCorrectAnswer = hasAnswerIndex ? idx === current.answerIndex : false;
+              
+              let stateClasses = "bg-white/5 border-white/10 text-white/80 hover:bg-white/10";
+              let icon = null;
+
+              if (status === "idle") {
+                if (isSelected) {
+                  stateClasses = "bg-primary/10 border-primary text-white shadow-[0_0_15px_rgba(255,107,0,0.15)]";
+                }
+              } else if (hasAnswerIndex) {
+                if (isSelected && isCorrect) {
+                  stateClasses = "bg-green-500/20 border-green-500 text-white scale-[1.02] shadow-[0_0_20px_rgba(34,197,94,0.2)]";
+                  icon = <span className="material-symbols-outlined text-green-500 font-bold">check_circle</span>;
+                } else if (isSelected && !isCorrect) {
+                  stateClasses = "bg-red-500/10 border-red-500/50 text-white/60";
+                  icon = <span className="material-symbols-outlined text-red-500 font-bold">cancel</span>;
+                } else if (isCorrectAnswer) {
+                  stateClasses = "bg-green-500/10 border-green-500/50 text-white";
+                  icon = <span className="material-symbols-outlined text-green-500 font-bold">check_circle</span>;
+                } else {
+                  stateClasses = "bg-white/5 border-white/5 text-white/30 opacity-50";
+                }
+              }
+
+              return (
+                <motion.button
+                  key={idx}
+                  whileTap={status === "idle" ? { scale: 0.98 } : {}}
+                  onClick={() => status === "idle" && setSelected(idx)}
+                  disabled={status === "checked"}
+                  className={`w-full text-left p-4 md:p-5 rounded-2xl border-2 transition-all duration-200 flex items-center justify-between gap-4 font-medium md:text-lg ${stateClasses}`}
+                >
+                  <span>{opt}</span>
+                  {icon}
+                </motion.button>
+              );
+            })}
+          </div>
+        </motion.div>
+      </AnimatePresence>
+
+      <div className="mt-10 h-16 relative">
+        <AnimatePresence mode="popLayout">
+          {selected !== null && (
+            <motion.button
+              key={status}
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 10, opacity: 0 }}
+              onClick={handleAction}
+              className={`absolute inset-0 w-full h-full font-bold text-lg rounded-2xl transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-2 ${
+                status === "idle" 
+                  ? "bg-white text-black hover:bg-slate-200" 
+                  : isCorrect 
+                    ? "bg-green-500 text-white hover:bg-green-600 shadow-green-500/20"
+                    : "bg-red-500 text-white hover:bg-red-600 shadow-red-500/20"
+              }`}
+            >
+              {status === "idle" 
+                ? (hasAnswerIndex ? "Check Answer" : "Confirm Answer") 
+                : isFinal 
+                  ? "Complete Lesson" 
+                  : "Next Question"}
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
-      <button
-        onClick={handleNext}
-        disabled={selected === null}
-        className="w-full mt-8 bg-white text-black font-bold py-3 rounded-xl hover:bg-slate-200 transition-all disabled:opacity-30"
-      >
-        {isFinal ? "Show Results" : "Next Question"}
-      </button>
     </div>
   );
 }
@@ -236,6 +493,7 @@ function LessonPageContent() {
   const [lesson, setLesson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showCompletion, setShowCompletion] = useState(false);
+  const [awardedXP, setAwardedXP] = useState(0);
   const [view, setView] = useState("content"); // 'content' or 'quiz'
 
   useEffect(() => {
@@ -244,14 +502,13 @@ function LessonPageContent() {
       try {
         const [meRes, lessonRes] = await Promise.allSettled([
           apiFetch("/v1/me"),
-          apiFetch(`/v1/lessons?chapterId=${encodeURIComponent(chapterId || "")}`), // Using student-safe lessons endpoint
+          apiFetch(`/v1/lessons/${lessonId}`), // ✅ Using new direct GET /v1/lessons/:id endpoint
         ]);
         
         if (meRes.status === "fulfilled") setMe(meRes.value?.data || meRes.value);
         if (lessonRes.status === "fulfilled") {
-          const lessons = asArray(lessonRes.value);
-          const found = lessons.find(l => (l._id || l.id) === lessonId);
-          setLesson(found || null);
+          const data = lessonRes.value?.data ?? lessonRes.value;
+          setLesson(data || null);
         }
       } finally {
         setLoading(false);
@@ -308,10 +565,23 @@ function LessonPageContent() {
           <div className="rounded-3xl overflow-hidden bg-slate-900 aspect-video border border-white/5 shadow-2xl relative group">
             {lesson?.videoUrl ? (
               isYouTube(lesson.videoUrl) ? (
-                <iframe src={toEmbedUrl(lesson.videoUrl)} className="w-full h-full" allowFullScreen />
-              ) : (
+                <iframe 
+                    src={toEmbedUrl(lesson.videoUrl)} 
+                    className="w-full h-full border-none" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen 
+                />
+              ) : isDirectVideo(lesson.videoUrl) ? (
                 <video src={lesson.videoUrl} controls className="w-full h-full" />
+              ) : (
+                <iframe 
+                    src={lesson.videoUrl} 
+                    className="w-full h-full border-none bg-white" 
+                    title="External Lesson Content"
+                    allowFullScreen 
+                />
               )
+
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-white/20">
                 <span className="material-symbols-outlined text-6xl mb-2">videocam_off</span>
@@ -347,7 +617,7 @@ function LessonPageContent() {
                 <h3 className="font-bold">Lesson Quiz</h3>
                 <button onClick={() => setView("content")} className="text-xs text-white/40 hover:text-white uppercase font-bold underline">Back to lesson</button>
               </div>
-              <QuizSection lessonId={lessonId} lessonXP={lessonXP} onComplete={(xp) => setShowCompletion(true)} />
+              <QuizSection lessonId={lessonId} lessonXP={lessonXP} onComplete={(xp) => { setAwardedXP(xp); setShowCompletion(true); }} isAdmin={me?.role === "admin" || me?.adminType === "super"} />
             </div>
           )}
         </div>
@@ -355,7 +625,7 @@ function LessonPageContent() {
 
       <CompletionModal 
         show={showCompletion} 
-        xp={lessonXP} 
+        xp={awardedXP} 
         onNext={handleNextAction}
       />
     </div>

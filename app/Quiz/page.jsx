@@ -112,8 +112,10 @@ function QuizPageContent() {
   const lessonId  = qv(searchParams, "lessonId", "");
   const subjectId = qv(searchParams, "subjectId", "");
   const chapterId = qv(searchParams, "chapterId", "");
+  const source    = qv(searchParams, "source", "");
 
   // ── state ─────────────────────────────────────────────────────────────────
+  const [me,           setMe]           = useState(null);
   const [quizDoc,      setQuizDoc]      = useState(null);
   const [loadError,    setLoadError]    = useState("");
   const [loading,      setLoading]      = useState(true);
@@ -131,6 +133,12 @@ function QuizPageContent() {
   const startTimeRef   = useRef(Date.now());
   const idempotencyKey = useRef(generateIdempotencyKey(lessonId));
 
+  // ── load user ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (authLoading) return;
+    apiFetch("/v1/me").then(res => setMe(res?.data || res)).catch(() => {});
+  }, [authLoading]);
+
   // ── load quiz ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -141,29 +149,27 @@ function QuizPageContent() {
       setLoading(true);
       setLoadError("");
       try {
-        const res  = await apiFetch(`/v1/admin/quizzes/latest?lessonId=${lessonId}`);
-        const docs = res?.data ?? res;
-        const arr  = Array.isArray(docs) ? docs : (docs ? [docs] : []);
-        const pub  = arr.find((d) => d?.isPublished === true);
-        const best = pub ?? arr[0] ?? null;
+        const isAdmin = me?.role === "admin" || me?.adminType === "super" || me?.adminType === "regular";
+        
+        // Admins can see the answer key for testing; students get redacted data
+        const endpoint = isAdmin 
+          ? `/v1/admin/quizzes/latest?lessonId=${lessonId}` 
+          : `/v1/attempts/quiz/${lessonId}`;
+
+        const res = await apiFetch(endpoint);
+        const quizData = res?.data ?? res;
 
         if (!cancelled) {
-          if (best?.questions?.length) {
-            setQuizDoc(best);
+          if (quizData?.questions?.length) {
+            setQuizDoc(quizData);
             setIsFallback(false);
           } else {
-            // Check for 403 fallback if no quiz explicitly returned
             setLoadError("No quiz available for this lesson yet.");
           }
         }
       } catch (err) {
         if (!cancelled) {
-          if (err.status === 403 || String(err).includes("403")) {
-            setQuizDoc(SAMPLE_QUIZ);
-            setIsFallback(true);
-          } else {
-            setLoadError("Could not load quiz. Please try again.");
-          }
+          setLoadError("Could not load quiz. Please try again.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -171,7 +177,7 @@ function QuizPageContent() {
     })();
 
     return () => { cancelled = true; };
-  }, [authLoading, lessonId]);
+  }, [authLoading, lessonId, me]);
 
   // ── derived ───────────────────────────────────────────────────────────────
 
@@ -234,7 +240,12 @@ function QuizPageContent() {
         ...(subjectId && { subjectId }),
         ...(chapterId && { chapterId }),
       });
-      router.replace(`/lesson?${params.toString()}`);
+      
+      if (source === "structure") {
+        router.replace(`/structure?chapterId=${chapterId}&completed=1&xpAwarded=${String(data?.xpAwarded ?? 0)}`);
+      } else {
+        router.replace(`/lesson/${lessonId}?${params.toString()}`);
+      }
     } catch (err) {
       const msg = err?.message ?? "Submission failed. Please try again.";
       setSubmitError(msg);
@@ -302,7 +313,11 @@ function QuizPageContent() {
             ...(subjectId && { subjectId }),
             ...(chapterId && { chapterId }),
           });
-          router.replace(`/lesson?${params.toString()}`);
+          if (source === "structure") {
+            router.replace(`/structure?chapterId=${chapterId}&completed=1&xpAwarded=${String(result?.xpAwarded ?? 0)}`);
+          } else {
+            router.replace(`/lesson/${lessonId}?${params.toString()}`);
+          }
         }}
         onBack={() => router.back()}
       />
@@ -312,6 +327,7 @@ function QuizPageContent() {
   // ── quiz UI ───────────────────────────────────────────────────────────────
 
   const correctIndex = currentQ?.answerIndex ?? currentQ?.correctIndex ?? -1;
+  const hasAnswerKey = correctIndex !== -1;
   const progress     = ((currentIdx) / total) * 100;
 
   return (
@@ -435,7 +451,7 @@ function QuizPageContent() {
               disabled={selected === null}
               className="w-full bg-primary hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-display font-bold py-4 rounded-xl shadow-lg shadow-orange-500/20 transition-all hover:-translate-y-0.5 active:scale-95"
             >
-              CHECK ANSWER
+              {hasAnswerKey ? "CHECK ANSWER" : "CONFIRM ANSWER"}
             </button>
           ) : isLast ? (
             // SUBMIT all answers

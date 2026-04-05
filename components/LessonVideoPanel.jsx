@@ -10,10 +10,27 @@ function isYouTube(url = "") {
 }
 
 function toEmbedUrl(url = "") {
-  return url
-    .replace("watch?v=", "embed/")
-    .replace("youtu.be/", "youtube.com/embed/");
+  // Robust YouTube ID extraction
+  const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
+  const match = url.match(regex);
+  const id = match ? match[1] : null;
+
+  if (id) return `https://www.youtube.com/embed/${id}`;
+  
+  // Fallback for Google Drive
+  if (url.includes("drive.google.com")) {
+      return url.replace("/view", "/preview").replace("/edit", "/preview");
+  }
+  return url;
 }
+
+
+function isDirectVideo(url = "") {
+    const directExtensions = [".mp4", ".webm", ".ogg", ".mov"];
+    const cleanUrl = url.split("?")[0].toLowerCase();
+    return directExtensions.some(ext => cleanUrl.endsWith(ext));
+}
+
 
 const SECTIONS = [
   { key: "hook",        label: "Hook",               emoji: "🎣", hint: "Opening question — ~10 sec", rows: 3 },
@@ -62,6 +79,17 @@ export default function LessonVideoPanel({
   const [urlInput,   setUrlInput]   = useState(currentVideoUrl);
   const [error,      setError]      = useState("");
   const [copied,     setCopied]     = useState(false);
+
+  // Sync internal state when prop changes (e.g. on external load or parent update)
+  useEffect(() => {
+    if (currentVideoUrl !== videoUrl) {
+        setVideoUrl(currentVideoUrl);
+        setUrlInput(currentVideoUrl);
+        if (currentVideoUrl) setStage("saved");
+        else if (stage === "saved") setStage("idle");
+    }
+  }, [currentVideoUrl]);
+
 
   // ── generate ──────────────────────────────────────────────────────────────
 
@@ -352,35 +380,84 @@ Return ONLY this JSON (no markdown, no extra text, no code fences):
         {/* saved */}
         {stage === "saved" && videoUrl && (
           <div className="space-y-3">
-            <div className="aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-200 dark:border-white/10">
+            <div className="aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-200 dark:border-white/10 relative">
               {isYouTube(videoUrl) ? (
                 <iframe
                   src={toEmbedUrl(videoUrl)}
-                  className="w-full h-full"
+                  className="w-full h-full border-none"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                 />
+              ) : isDirectVideo(videoUrl) ? (
+                <video 
+                    src={videoUrl} 
+                    controls 
+                    crossOrigin="anonymous"
+                    className="w-full h-full" 
+                    onError={(e) => {
+                        console.error("Video playback error:", e);
+                        setError("This video link cannot be streamed directly. Try opening it in a new tab or use a YouTube link.");
+                    }}
+                />
               ) : (
-                <video src={videoUrl} controls className="w-full h-full" />
+
+                <iframe 
+                    src={videoUrl} 
+                    className="w-full h-full border-none bg-white"
+                    title="External Content Preview"
+                    allowFullScreen
+                />
               )}
+              
+              {/* Overlay Failover if video doesn't load */}
+              <div className="absolute top-2 right-2 flex gap-1 animate-in fade-in duration-500">
+                <a 
+                    href={videoUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="p-1.5 bg-black/60 hover:bg-black/80 rounded-lg text-white/60 hover:text-white transition-all backdrop-blur-sm"
+                    title="Open original link in new tab"
+                >
+                    <span className="material-symbols-outlined text-[18px]">open_in_new</span>
+                </a>
+              </div>
             </div>
+
+
             <div className="flex gap-2">
-              <a
-                href={videoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5 transition-all"
+              <button
+                onClick={() => window.open(videoUrl, "_blank")}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-orange-600 transition-all shadow-lg shadow-primary/20 active:scale-95"
               >
-                <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                Open
-              </a>
+                <span className="material-symbols-outlined text-[18px]">play_circle</span>
+                Check Video Stream
+              </button>
               <button
                 onClick={() => { setStage("idle"); setScript(null); setVideoUrl(""); setUrlInput(""); }}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-red-200 dark:border-red-500/30 text-red-500 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+                className="px-4 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-white/10 text-white/40 text-sm font-medium hover:bg-white/5 transition-all"
               >
-                <span className="material-symbols-outlined text-[16px]">refresh</span>
-                Replace
+                <span className="material-symbols-outlined text-[18px]">edit</span>
+                Edit Link
               </button>
             </div>
+            
+            {/* Help / Troubleshooting */}
+            <div className="rounded-xl bg-white/[0.03] border border-white/10 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-white/40 italic">
+                    <span className="material-symbols-outlined text-[14px]">info</span>
+                    <p className="text-[10px] font-bold uppercase tracking-wider">Troubleshooting Preview</p>
+                </div>
+                <p className="text-[10px] leading-relaxed text-white/30">
+                    If the preview above is black or &quot;Refused to Connect&quot;, it&apos;s likely due to browser security restrictions. 
+                    <span className="text-primary/60 font-bold ml-1">The video will still work in the student app.</span> 
+                    Click &quot;Check Video Stream&quot; above to verify the link in a raw tab.
+                </p>
+                <div className="pt-2 border-t border-white/5 font-mono text-[9px] text-white/20 break-all select-all">
+                    ID: {lessonId} | URL: {videoUrl}
+                </div>
+            </div>
+
+
             <details className="rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden">
               <summary className="px-3 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 transition-colors select-none">
                 Update video URL
