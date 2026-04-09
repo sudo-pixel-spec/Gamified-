@@ -63,43 +63,51 @@ export default function LoginPage() {
   // ── Google Identity Services ─────────────────────────────────────────
   useEffect(() => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId) return;
+    if (!clientId) {
+      console.error("GOOGLE_CLIENT_ID is missing from environment variables.");
+      return;
+    }
     const init = () => {
       if (!window.google || !googleBtnRef.current) return;
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: async (response) => {
-          setLoading(true);
-          setError("");
-          try {
-            const res = await fetch(`${API}/v1/auth/google`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-              body: JSON.stringify({ credential: response.credential }),
-            });
-            const json = await res.json();
-            if (!res.ok) throw new Error(json?.error?.message ?? "Authentication failed. Please check your credentials.");
-            const data = json?.data ?? json;
-            await authLogin(data.accessToken, data.user);
-            
-            const user = data.user;
-            if (user?.role === "admin") {
-              router.push("/admin");
-            } else {
-              router.push(user?.profileComplete ? "/dashboard" : "/completeprofile");
+      try {
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: async (response) => {
+            setLoading(true);
+            setError("");
+            try {
+              const res = await fetch(`${API}/v1/auth/google`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ credential: response.credential }),
+              });
+              const json = await res.json();
+              if (!res.ok) throw new Error(json?.error?.message ?? "Authentication failed. Please check your credentials.");
+              const data = json?.data ?? json;
+              await authLogin(data.accessToken, data.user);
+              
+              const user = data.user;
+              if (user?.role === "admin") {
+                router.push("/admin");
+              } else {
+                router.push(user?.profileComplete ? "/dashboard" : "/completeprofile");
+              }
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Google sign-in failed");
+            } finally {
+              setLoading(false);
             }
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Google sign-in failed");
-          } finally {
-            setLoading(false);
-          }
-        },
-      });
-      window.google.accounts.id.renderButton(googleBtnRef.current, {
-        type: "standard", theme: "filled_black", size: "large",
-        text: "continue_with", shape: "pill", width: "260",
-      });
+          },
+        });
+        window.google.accounts.id.renderButton(googleBtnRef.current, {
+          type: "standard", theme: "filled_black", size: "large",
+          text: "continue_with", shape: "pill", width: "260",
+        });
+      } catch (err) {
+        console.error("Google button rendering failed:", err);
+        setError("Unable to load Google Sign-In. Check your connection or configuration.");
+      }
     };
     if (window.google?.accounts) {
       init();
@@ -379,10 +387,7 @@ export default function LoginPage() {
             )}
           </div>
 
-          <p className="footer-text">
-            New here?{" "}
-            <span className="footer-link" onClick={() => router.push("/signup")}>Join the mission</span>
-          </p>
+
         </div>
       </div>
     </>

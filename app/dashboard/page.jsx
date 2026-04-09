@@ -119,7 +119,7 @@ export default function Dashboard() {
     })();
 
     return () => { cancelled = true; };
-  }, [authLoading, router]);
+  }, [authLoading, router, authUser]);
 
   // Handle Standard Change from Prompt
   const handleStandardSelect = async (std) => {

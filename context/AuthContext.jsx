@@ -18,12 +18,17 @@ export function AuthProvider({ children }) {
   const refreshUser = useCallback(async () => {
     try {
       const data = await apiFetch("/v1/me");
-      const userData = data?.data || data;
-      setUser(userData);
+      const userData = data?.data || data?.user || data;
+      if (userData) {
+        setUser(userData);
+      }
       return userData;
     } catch (err) {
       console.error("AuthContext: Profile fetch failed", err);
-      setUser(null);
+      // Only null out if we are sure the session is gone (e.g. 401)
+      if (err.message.includes("401") || err.message.toLowerCase().includes("unauthorized")) {
+        setUser(null);
+      }
       return null;
     }
   }, []);
@@ -32,9 +37,10 @@ export function AuthProvider({ children }) {
     apiSetToken(token);
     if (userData) {
       setUser(userData);
-    } else {
-      await refreshUser();
     }
+    // Deep-refresh the user object from /v1/me to ensure scores/XP/images are loaded
+    // before the login page redirects the user to the dashboard.
+    await refreshUser();
   }, [refreshUser]);
 
   const logout = useCallback(async () => {

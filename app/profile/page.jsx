@@ -4,30 +4,16 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../hooks/useRequireAuth";
 import { getToken, apiFetch } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
 import { fetchAllStudentStandards } from "../../lib/curriculum-api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "";
 
-// Custom fetch for non-GET requests if apiFetch doesn't support them easily
-async function mutate(path, { method = "POST", token, body }) {
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  const json = await res.json();
-  if (!res.ok || json?.ok === false) {
-    throw new Error(json?.error?.message || json?.error || "Request failed");
-  }
-  return json?.data ?? json;
-}
+
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { loading: authLoading } = useRequireAuth();
+  const { user: authUser, loading: authLoading, refreshUser } = useAuth();
 
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -100,15 +86,15 @@ export default function ProfilePage() {
     try {
       // For name updates, we use the onboarding route to stay safe with the dynamic "standard" value 
       // if it was already set to an ID.
-      await mutate("/v1/me/onboarding", {
+      await apiFetch("/v1/me/onboarding", {
         method: "PATCH",
-        token,
-        body: { 
+        body: JSON.stringify({ 
           fullName: editName.trim(),
           standard: me?.profile?.standard || "",
           timezone: me?.profile?.timezone || "Asia/Kolkata"
-        },
+        }),
       });
+      await refreshUser();
       await fetchMe(token);
       setIsEditingName(false);
     } catch (err) {
@@ -127,15 +113,16 @@ export default function ProfilePage() {
     setSavingGrade(true);
     try {
       // Use the flexible Onboarding route to save the grade ID
-      await mutate("/v1/me/onboarding", {
+      await apiFetch("/v1/me/onboarding", {
         method: "PATCH",
-        token,
-        body: { 
+        body: JSON.stringify({ 
           fullName: me?.profile?.fullName || "Learner",
           standard: selectedGradeId,
           timezone: me?.profile?.timezone || "Asia/Kolkata"
-        },
+        }),
       });
+      
+      await refreshUser();
       await fetchMe(token);
       setIsEditingGrade(false);
       alert("Grade updated successfully!");
@@ -155,9 +142,9 @@ export default function ProfilePage() {
     setOtpValue("");
     try {
       // POST /v1/auth/request-otp
-      await mutate("/v1/auth/request-otp", {
+      await apiFetch("/v1/auth/request-otp", {
         method: "POST",
-        body: type === "phone" ? { phone: value } : { email: value },
+        body: JSON.stringify(type === "phone" ? { phone: value } : { email: value }),
       });
       setOtpStep(true);
     } catch (err) {
@@ -178,24 +165,14 @@ export default function ProfilePage() {
       // Using a standard flow: /v1/auth/verify-otp would return tokens, but we are logged in.
       // Many APIs allow passing the OTP to the profile update or a specific verify endpoint.
       // E.g. POST /v1/auth/verify-otp with phone and otp.
-      await mutate("/v1/auth/verify-otp", {
+      await apiFetch("/v1/auth/verify-otp", {
         method: "POST",
-        body: verifyingField === "phone" 
+        body: JSON.stringify(verifyingField === "phone" 
           ? { phone: verifyValue, otp: otpValue }
-          : { email: verifyValue, otp: otpValue }
+          : { email: verifyValue, otp: otpValue })
       });
       
-      // Attempt to patch to ensure it's marked
-      try {
-        await mutate("/v1/me/profile", {
-          method: "PATCH",
-          token,
-          body: { [verifyingField]: verifyValue }
-        });
-      } catch (e) {
-        // Might fail if it's already updated by verify-otp
-      }
-
+      await refreshUser();
       await fetchMe(token);
       setVerifyingField(null);
       setOtpStep(false);
@@ -436,7 +413,11 @@ export default function ProfilePage() {
                       <span className="material-symbols-rounded text-slate-400">school</span>
                       {availableGrades.find(g => g._id === p.standard)?.name || p.standard || "Not set"}
                     </span>
-                    <button onClick={() => { setIsEditingGrade(true); setSelectedGradeId(p.standard); }} className="text-primary text-sm font-bold hover:underline flex items-center gap-1">
+                    <button onClick={() => { 
+                      setIsEditingGrade(true); 
+                      const current = availableGrades.find(g => g._id === p.standard || g.code === p.standard);
+                      setSelectedGradeId(current?._id || p.standard); 
+                    }} className="text-primary text-sm font-bold hover:underline flex items-center gap-1">
                       <span className="material-symbols-rounded text-sm">edit</span> Edit
                     </button>
                   </div>
